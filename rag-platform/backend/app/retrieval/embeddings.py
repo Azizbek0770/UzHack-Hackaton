@@ -1,10 +1,12 @@
 """
 Embedding Engine — BAAI/bge-m3 Multilingual Embeddings
 Handles batched encoding for both text and table chunks.
+Memory-safe: processes in small sub-batches with explicit GC.
 """
 
 from __future__ import annotations
 
+import gc
 import pickle
 from pathlib import Path
 from typing import List, Optional, Union
@@ -17,6 +19,9 @@ from app.core.logging import TimingLogger
 from app.models.schemas import DocumentChunk, TableChunk
 
 logger = structlog.get_logger(__name__)
+
+# Maximum characters per text to keep tensors small
+_MAX_TEXT_CHARS = 512
 
 
 class EmbeddingEngine:
@@ -61,7 +66,7 @@ class EmbeddingEngine:
 
     def embed_texts(self, texts: List[str]) -> np.ndarray:
         """
-        Embed a list of texts.
+        Embed a list of texts in memory-safe sub-batches.
 
         Args:
             texts: List of strings to embed.
@@ -71,16 +76,34 @@ class EmbeddingEngine:
         """
         self._load_model()
 
-        with TimingLogger("embed", logger, n=len(texts)):
-            embeddings = self._model.encode(
-                texts,
-                batch_size=self._batch_size,
-                show_progress_bar=len(texts) > 100,
-                normalize_embeddings=True,  # cosine similarity via dot product
-                convert_to_numpy=True,
-            )
+        # Truncate texts to avoid huge tensors
+        texts = [t[:_MAX_TEXT_CHARS] for t in texts]
 
-        return embeddings.astype(np.float32)
+        all_embeddings: List[np.ndarray] = []
+        sub_batch = self._batch_size  # small, memory-safe size
+
+        logger.info("Embedding texts", total=len(texts), sub_batch=sub_batch)
+
+        with TimingLogger("embed", logger, n=len(texts)):
+            for start in range(0, len(texts), sub_batch):
+                batch = texts[start: start + sub_batch]
+                vecs = self._model.encode(
+                    batch,
+                    batch_size=sub_batch,
+                    show_progress_bar=False,
+                    normalize_embeddings=True,
+                    convert_to_numpy=True,
+                )
+                all_embeddings.append(vecs.astype(np.float32))
+
+                # Free intermediate tensors after every sub-batch
+                gc.collect()
+
+                done = min(start + sub_batch, len(texts))
+                if done % 100 == 0 or done == len(texts):
+                    logger.debug("Embedding progress", done=done, total=len(texts))
+
+        return np.vstack(all_embeddings)
 
     def embed_query(self, query: str) -> np.ndarray:
         """

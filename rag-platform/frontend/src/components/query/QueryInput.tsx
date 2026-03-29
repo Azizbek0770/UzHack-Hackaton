@@ -11,18 +11,18 @@ interface QueryInputProps {
 }
 
 const SUGGESTIONS = [
-  'Какова выручка компании за 2023 год?',
-  'Каков объём суммарных активов?',
-  'Основной вид деятельности компании?',
-  'Чистая прибыль за отчётный период?',
-  'Daromad ko\'rsatkichi qancha?',
+  "2023-yildagi sof foyda qancha bo'lgan?",
+  "Jami aktivlar hajmi qancha?",
+  "Asosiy faoliyat turi nima?",
+  "Kapital va zaxiralar miqdori?",
+  "Daromad ko'rsatkichlari dinamikasi?",
 ]
 
 const DOC_TYPE_OPTIONS: { value: DocType | ''; label: string }[] = [
-  { value: '', label: 'Все документы' },
-  { value: 'financial_report', label: 'Финансовый отчёт' },
-  { value: 'annual_report', label: 'Годовой отчёт' },
-  { value: 'disclosure', label: 'Раскрытие информации' },
+  { value: '', label: 'Barcha hujjatlar' },
+  { value: 'financial_report', label: 'Moliyaviy hisobot' },
+  { value: 'annual_report', label: 'Yillik hisobot' },
+  { value: 'disclosure', label: "Ma'lumot oshkoraligi" },
 ]
 
 export function QueryInput({ onSubmit, isLoading, disabled }: QueryInputProps) {
@@ -42,7 +42,6 @@ export function QueryInput({ onSubmit, isLoading, disabled }: QueryInputProps) {
   const handleSubmit = () => {
     const q = question.trim()
     if (!q || isLoading || disabled) return
-
     onSubmit({
       question: q,
       doc_type_filter: docType as DocType || undefined,
@@ -76,11 +75,11 @@ export function QueryInput({ onSubmit, isLoading, disabled }: QueryInputProps) {
           'relative rounded-2xl border transition-all duration-300',
           'bg-obsidian-900',
           canSubmit || question.length > 0
-            ? 'border-gold-500/30 shadow-[0_0_40px_rgba(201,168,76,0.08)]'
+            ? 'border-gold-500/35 shadow-[0_0_50px_rgba(201,168,76,0.1)]'
             : 'border-obsidian-700'
         )}
       >
-        {/* Glow ring on focus */}
+        {/* Focus glow */}
         <div className={clsx(
           'absolute inset-0 rounded-2xl transition-opacity duration-500 pointer-events-none',
           'bg-gradient-to-r from-gold-500/5 via-transparent to-gold-500/5',
@@ -92,16 +91,13 @@ export function QueryInput({ onSubmit, isLoading, disabled }: QueryInputProps) {
           <div className="flex gap-3 items-start">
             <div className="mt-1 shrink-0">
               {isLoading ? (
-                <Loader2
-                  size={18}
-                  className="text-gold-500 animate-spin"
-                />
+                <Loader2 size={18} className="text-gold-500 animate-spin" />
               ) : (
                 <Search
                   size={18}
                   className={clsx(
                     'transition-colors duration-200',
-                    question.length > 0 ? 'text-gold-500' : 'text-obsidian-600'
+                    question.length > 0 ? 'text-gold-500' : 'text-obsidian-500'
                   )}
                 />
               )}
@@ -112,13 +108,13 @@ export function QueryInput({ onSubmit, isLoading, disabled }: QueryInputProps) {
               value={question}
               onChange={(e) => setQuestion(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="Задайте вопрос о финансовых показателях компании..."
+              placeholder="Moliyaviy hujjatlar bo'yicha savol bering..."
               disabled={isLoading || disabled}
               rows={1}
               className={clsx(
                 'flex-1 resize-none bg-transparent outline-none',
                 'text-[15px] font-sans leading-relaxed',
-                'placeholder:text-obsidian-600 text-gray-100',
+                'placeholder:text-obsidian-500 text-gray-100',
                 'min-h-[28px] max-h-[200px]',
                 'disabled:cursor-not-allowed disabled:opacity-60'
               )}
@@ -142,15 +138,10 @@ export function QueryInput({ onSubmit, isLoading, disabled }: QueryInputProps) {
                 )}
               >
                 {DOC_TYPE_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
                 ))}
               </select>
-              <ChevronDown
-                size={12}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none"
-              />
+              <ChevronDown size={12} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
             </div>
 
             {/* Debug toggle */}
@@ -184,12 +175,12 @@ export function QueryInput({ onSubmit, isLoading, disabled }: QueryInputProps) {
             {isLoading ? (
               <>
                 <Loader2 size={14} className="animate-spin" />
-                Анализ...
+                Tahlil qilinmoqda...
               </>
             ) : (
               <>
                 <Search size={14} />
-                Найти
+                Qidirish
               </>
             )}
           </motion.button>
@@ -213,10 +204,11 @@ export function QueryInput({ onSubmit, isLoading, disabled }: QueryInputProps) {
                 animate={{ opacity: 1, scale: 1 }}
                 transition={{ delay: 0.1 * i + 0.2 }}
                 onClick={() => handleSuggestion(s)}
+                whileHover={{ y: -2 }}
                 className={clsx(
                   'text-xs px-3 py-1.5 rounded-full border transition-all duration-200',
-                  'border-obsidian-700 text-obsidian-500',
-                  'hover:border-gold-500/30 hover:text-gold-400 hover:bg-gold-500/5',
+                  'border-obsidian-700 text-obsidian-400',
+                  'hover:border-gold-500/35 hover:text-gold-400 hover:bg-gold-500/6',
                   'cursor-pointer'
                 )}
               >
@@ -229,7 +221,7 @@ export function QueryInput({ onSubmit, isLoading, disabled }: QueryInputProps) {
 
       {/* Hint */}
       <p className="text-center text-xs text-obsidian-600 mt-3">
-        Enter для отправки · Shift+Enter для новой строки
+        Enter — yuborish · Shift+Enter — yangi qator
       </p>
     </div>
   )

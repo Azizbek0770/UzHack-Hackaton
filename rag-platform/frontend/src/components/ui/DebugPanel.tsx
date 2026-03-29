@@ -34,7 +34,7 @@ export function DebugPanel({ debug }: DebugPanelProps) {
             Debug Info
           </span>
           <span className="text-xs text-obsidian-500">
-            {debug.retrieved_text_chunks} текст · {debug.retrieved_table_chunks} таблиц
+            {debug.retrieved_text_chunks} matn · {debug.retrieved_table_chunks} jadval
           </span>
         </div>
         <ChevronDown
@@ -131,7 +131,7 @@ export function DebugPanel({ debug }: DebugPanelProps) {
               {debug.rewritten_query && debug.rewritten_query !== '' && (
                 <div>
                   <span className="text-xs text-obsidian-500 uppercase tracking-wider">
-                    Rewritten Query:
+                    O'zgartirilgan so'rov:
                   </span>
                   <p className="mt-1 text-xs font-mono text-gold-300 bg-obsidian-800 px-3 py-2 rounded-lg">
                     {debug.rewritten_query}

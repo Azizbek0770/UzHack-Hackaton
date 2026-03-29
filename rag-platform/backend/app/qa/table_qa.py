@@ -164,7 +164,7 @@ class TableQAEngine:
         # Find year column
         year_col = None
         for h in headers:
-            if any(kw in h.lower() for kw in ["год", "year", "yil", "период", "дата"]):
+            if any(kw in h.lower() for kw in ["год", "year", "yil", "период", "дата", "sana", "davr"]):
                 year_col = h
                 break
 
@@ -188,27 +188,49 @@ class TableQAEngine:
         analysis: QueryAnalysis,
         tables: List[TableChunk],
     ) -> str:
-        """Format the extracted value into a readable answer string."""
-        metric_names = {
-            "revenue": "Выручка",
-            "profit": "Чистая прибыль",
-            "assets": "Суммарные активы",
-            "liabilities": "Обязательства",
-            "equity": "Собственный капитал",
-            "loss": "Чистый убыток",
+        """
+        Format the extracted value into a complete, natural Uzbek sentence.
+        Returns a well-structured answer suitable for display to end users.
+        """
+        metric_names_uz = {
+            "revenue": "daromad (tushum)",
+            "profit": "sof foyda",
+            "assets": "jami aktivlar",
+            "liabilities": "majburiyatlar",
+            "equity": "o'z kapitali (kapital)",
+            "loss": "sof zarar",
+            "employees": "xodimlar soni",
         }
 
-        metric_label = metric_names.get(analysis.target_metric or "", "Значение")
+        metric_label = metric_names_uz.get(
+            analysis.target_metric or "", "moliyaviy ko'rsatkich"
+        )
 
-        # Format number
-        if isinstance(value, (int, float)):
-            formatted = f"{value:,.0f}" if isinstance(value, float) and value == int(value) \
-                else f"{value:,.2f}" if isinstance(value, float) else f"{value:,}"
+        # Format the numeric value with thousands separators
+        if isinstance(value, float):
+            if value == int(value):
+                formatted_value = f"{value:,.0f}"
+            else:
+                formatted_value = f"{value:,.2f}"
+        elif isinstance(value, int):
+            formatted_value = f"{value:,}"
         else:
-            formatted = str(value)
+            formatted_value = str(value).strip()
 
-        year_part = f" за {analysis.target_year} год" if analysis.target_year else ""
-        company_part = f" ({tables[0].metadata.company})" if tables else ""
-        sheet_part = f" [Лист: {tables[0].sheet_name}]" if tables and tables[0].sheet_name else ""
+        # Build the source reference
+        source_file = tables[0].metadata.file_name if tables else "noma'lum hujjat"
+        company = tables[0].metadata.company if tables else ""
+        sheet = tables[0].sheet_name if tables and tables[0].sheet_name else None
 
-        return f"{metric_label}{year_part}{company_part}: {formatted}{sheet_part}"
+        # Build a natural Uzbek sentence
+        year_str = f"{analysis.target_year} yil uchun " if analysis.target_year else ""
+        company_str = f"{company} kompaniyasining " if company else ""
+        sheet_str = f" ('{sheet}' varag'idan)" if sheet else ""
+
+        answer = (
+            f"{company_str}{year_str}{metric_label} {formatted_value} tashkil etadi"
+            f"{sheet_str}.\n\n"
+            f"📄 Manba: «{source_file}»"
+        )
+
+        return answer

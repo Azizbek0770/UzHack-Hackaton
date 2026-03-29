@@ -54,10 +54,10 @@ class Settings(BaseSettings):
     ]
 
     # ── Embedding Model ───────────────────────────────────────────────────────
-    EMBEDDING_MODEL: str = "BAAI/bge-m3"
+    EMBEDDING_MODEL: str = "all-MiniLM-L6-v2"  # 384-dim, fast & multilingual
     EMBEDDING_DEVICE: str = "cpu"  # "cuda" for GPU
-    EMBEDDING_BATCH_SIZE: int = 32
-    EMBEDDING_DIM: int = 1024  # bge-m3 output dim
+    EMBEDDING_BATCH_SIZE: int = 8   # safe for CPU
+    EMBEDDING_DIM: int = 384  # all-MiniLM-L6-v2 output dim (bge-m3 would be 1024)
 
     # ── FAISS ─────────────────────────────────────────────────────────────────
     FAISS_INDEX_TYPE: str = "IVFFlat"  # or "Flat" for small datasets
@@ -71,12 +71,12 @@ class Settings(BaseSettings):
     DENSE_WEIGHT: float = 0.7         # weight for dense retrieval
 
     # ── LLM ───────────────────────────────────────────────────────────────────
-    LLM_PROVIDER: str = "openai"      # "openai" | "anthropic" | "ollama"
+    LLM_PROVIDER: str = "openai"      # "openai" | "google" | "anthropic" | "ollama"
     LLM_MODEL: str = "gpt-4o-mini"
     LLM_API_KEY: Optional[str] = None
-    LLM_BASE_URL: Optional[str] = None  # for Ollama or custom endpoints
-    LLM_MAX_TOKENS: int = 1024
-    LLM_TEMPERATURE: float = 0.1      # low temp for factual QA
+    LLM_BASE_URL: Optional[str] = None  # for Ollama, Google, or custom endpoints
+    LLM_MAX_TOKENS: int = 2048
+    LLM_TEMPERATURE: float = 0.0      # 0.0 = maximum factual accuracy for financial QA
 
     # ── OCR ───────────────────────────────────────────────────────────────────
     OCR_ENABLED: bool = True

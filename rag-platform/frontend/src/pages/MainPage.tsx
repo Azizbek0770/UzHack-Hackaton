@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { PanelLeft } from 'lucide-react'
+import { PanelLeft, ArrowLeft } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 import clsx from 'clsx'
 
 import { QueryInput } from '../components/query/QueryInput'
@@ -10,12 +11,14 @@ import { LoadingSkeleton, ErrorState, EmptyState } from '../components/ui/States
 import { DebugPanel } from '../components/ui/DebugPanel'
 import { QueryHistory } from '../components/ui/QueryHistory'
 import { StatusBar } from '../components/ui/StatusBar'
+import { FinBotAvatar } from '../components/ui/FinBotAvatar'
 
 import { useQuery, useQueryHistory } from '../hooks/useQuery'
 import type { QueryRequest, HistoryEntry } from '../services/types'
 
 export function MainPage() {
-  const { response, isLoading, error, submit } = useQuery()
+  const navigate = useNavigate()
+  const { response, isLoading, error, submit, reset } = useQuery()
   const { history, addEntry, clearHistory, removeEntry } = useQueryHistory()
   const [currentQuestion, setCurrentQuestion] = useState('')
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -34,7 +37,6 @@ export function MainPage() {
   const handleHistorySelect = useCallback(
     (entry: HistoryEntry) => {
       setCurrentQuestion(entry.question)
-      // Replay the cached response by re-submitting
       handleSubmit({ question: entry.question, debug: false })
       setSidebarOpen(false)
     },
@@ -48,38 +50,37 @@ export function MainPage() {
       <header className="sticky top-0 z-50 glass border-b border-obsidian-700">
         <div className="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between">
 
-          {/* Logo */}
+          {/* Logo + back */}
           <div className="flex items-center gap-3">
-            <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-gold-500 to-gold-300 flex items-center justify-center">
-              <span className="text-obsidian-950 font-display text-sm">F</span>
-            </div>
+            <button
+              onClick={() => navigate('/')}
+              className="flex items-center gap-1.5 text-obsidian-500 hover:text-gold-400 transition-colors mr-1"
+              title="Bosh sahifaga qaytish"
+            >
+              <ArrowLeft size={14} />
+            </button>
+            <FinBotAvatar size={28} />
             <div>
-              <span className="font-display text-lg tracking-wider text-gray-100">
-                FINRAG
-              </span>
-              <span className="ml-2 text-xs text-obsidian-500 font-medium">
-                Financial Intelligence
-              </span>
+              <span className="font-display text-lg tracking-wider text-gray-100">FINBOT</span>
+              <span className="ml-2 text-xs text-obsidian-500 font-mono">Moliyaviy AI</span>
             </div>
           </div>
 
           {/* Status + History toggle */}
           <div className="flex items-center gap-4">
             <StatusBar />
-            {history.length > 0 && (
-              <button
-                onClick={() => setSidebarOpen((v) => !v)}
-                className={clsx(
-                  'flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs transition-all',
-                  sidebarOpen
-                    ? 'bg-gold-500/10 border-gold-500/25 text-gold-400'
-                    : 'bg-obsidian-800 border-obsidian-700 text-obsidian-400 hover:border-obsidian-600'
-                )}
-              >
-                <PanelLeft size={13} />
-                История ({history.length})
-              </button>
-            )}
+            <button
+              onClick={() => setSidebarOpen((v) => !v)}
+              className={clsx(
+                'flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs transition-all',
+                sidebarOpen
+                  ? 'bg-gold-500/10 border-gold-500/25 text-gold-400'
+                  : 'bg-obsidian-800 border-obsidian-700 text-obsidian-400 hover:border-obsidian-600'
+              )}
+            >
+              <PanelLeft size={13} />
+              Tarix {history.length > 0 && `(${history.length})`}
+            </button>
           </div>
         </div>
       </header>
@@ -119,24 +120,32 @@ export function MainPage() {
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -10 }}
                   transition={{ duration: 0.5 }}
-                  className="text-center space-y-3 pb-4"
+                  className="text-center space-y-4 pb-4"
                 >
+                  <div className="flex justify-center mb-2">
+                    <motion.div
+                      animate={{ rotate: [0, 360] }}
+                      transition={{ duration: 20, repeat: Infinity, ease: 'linear' }}
+                    >
+                      <FinBotAvatar size={48} />
+                    </motion.div>
+                  </div>
                   <h1 className="font-display text-5xl text-gray-100 tracking-widest">
-                    FINANCIAL{' '}
-                    <span className="gold-gradient">INTELLIGENCE</span>
+                    MOLIYAVIY{' '}
+                    <span className="gold-gradient">TAHLIL</span>
                   </h1>
                   <p className="text-sm text-obsidian-400 max-w-md mx-auto leading-relaxed">
-                    Задайте вопрос о финансовой отчётности компании.
-                    Система анализирует PDF, XLSX и корпоративные раскрытия
-                    на русском и узбекском языках.
+                    Moliyaviy hujjatlar bo'yicha savol bering.
+                    Tizim PDF, XLSX va korporativ hisobotlarni
+                    o'zbek tilida tahlil qiladi.
                   </p>
 
-                  {/* Language badges */}
-                  <div className="flex items-center justify-center gap-2 pt-1">
-                    {['РУС', 'UZB', 'PDF', 'XLSX'].map((tag) => (
+                  {/* Capability badges */}
+                  <div className="flex items-center justify-center gap-2 pt-1 flex-wrap">
+                    {["O'ZB", 'RUS', 'PDF', 'XLSX', 'NBU'].map((tag) => (
                       <span
                         key={tag}
-                        className="text-[10px] font-mono px-2 py-0.5 rounded border border-obsidian-700 text-obsidian-500"
+                        className="tech-badge"
                       >
                         {tag}
                       </span>
@@ -155,14 +164,12 @@ export function MainPage() {
             {/* ── Results Area ─────────────────────────────────────────── */}
             <div className="space-y-4">
               <AnimatePresence mode="wait">
-                {/* Loading */}
                 {isLoading && (
                   <motion.div key="loading" exit={{ opacity: 0 }}>
                     <LoadingSkeleton />
                   </motion.div>
                 )}
 
-                {/* Error */}
                 {!isLoading && error && (
                   <motion.div key="error">
                     <ErrorState
@@ -175,7 +182,6 @@ export function MainPage() {
                   </motion.div>
                 )}
 
-                {/* Results */}
                 {!isLoading && !error && response && (
                   <motion.div key="result" className="space-y-4">
                     <AnswerCard response={response} question={currentQuestion} />
@@ -186,7 +192,6 @@ export function MainPage() {
                   </motion.div>
                 )}
 
-                {/* Empty */}
                 {!isLoading && !error && !response && (
                   <motion.div key="empty">
                     <EmptyState />
@@ -203,10 +208,10 @@ export function MainPage() {
       <footer className="border-t border-obsidian-800 py-3 px-6">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <span className="text-xs text-obsidian-700">
-            FinRAG · RAG Platform v1.0 · Hackathon Edition
+            FinBot · UzHack 2026 · NBU RAG Challenge
           </span>
           <span className="text-xs text-obsidian-700 font-mono">
-            bge-m3 · FAISS · BM25
+            bge-m3 · FAISS · BM25 · Gemini
           </span>
         </div>
       </footer>

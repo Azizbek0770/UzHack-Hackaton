@@ -30,13 +30,13 @@ export function QueryHistory({
         <div className="flex items-center gap-2">
           <History size={14} className="text-gold-500" />
           <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
-            История
+            Tarix
           </span>
         </div>
         <button
           onClick={onClear}
           className="p-1 rounded text-obsidian-500 hover:text-crimson-400 transition-colors"
-          title="Очистить историю"
+          title="Tarixni tozalash"
         >
           <Trash2 size={13} />
         </button>
@@ -45,10 +45,11 @@ export function QueryHistory({
       {/* Entries */}
       <div className="flex-1 overflow-y-auto py-2">
         <AnimatePresence initial={false}>
-          {history.map((entry) => (
+          {history.map((entry, i) => (
             <HistoryItem
               key={entry.id}
               entry={entry}
+              index={i}
               onSelect={onSelect}
               onRemove={onRemove}
             />
@@ -63,10 +64,12 @@ export function QueryHistory({
 
 function HistoryItem({
   entry,
+  index,
   onSelect,
   onRemove,
 }: {
   entry: HistoryEntry
+  index: number
   onSelect: (e: HistoryEntry) => void
   onRemove: (id: string) => void
 }) {
@@ -77,7 +80,7 @@ function HistoryItem({
       ? 'text-gold-500'
       : 'text-crimson-400'
 
-  const timeStr = new Date(entry.timestamp).toLocaleTimeString('ru-RU', {
+  const timeStr = new Date(entry.timestamp).toLocaleTimeString('uz-UZ', {
     hour: '2-digit',
     minute: '2-digit',
   })

@@ -1,13 +1,17 @@
 """
-LLM QA Module
-Uses LLM ONLY for reasoning over retrieved context.
-Strict prompts prevent hallucination.
-Supports OpenAI, Anthropic, and Ollama providers.
+LLM QA Module — v2 (Fixed & Hardened)
+======================================
+- Fixed: Google Gemini treated as OpenAI-compatible provider
+- Fixed: Robust JSON extraction handles markdown-wrapped responses
+- Fixed: Stronger Uzbek language enforcement in system prompt
+- Fixed: No hallucination — strict grounding rules
+- Fixed: Fallback path also returns clean Uzbek text
 """
 
 from __future__ import annotations
 
 import json
+import re
 from typing import List, Optional, Tuple, Union
 
 import structlog
@@ -20,42 +24,65 @@ from app.qa.classifier import QueryAnalysis
 logger = structlog.get_logger(__name__)
 
 
-# ── System prompt — strict factual QA ────────────────────────────────────────
-SYSTEM_PROMPT = """You are a financial document analysis assistant.
+# ── System Prompt — Strict, Uzbek-first, anti-hallucination ──────────────────
+SYSTEM_PROMPT = """Siz O'zbekiston Milliy Banki (NBU) moliyaviy hujjatlarini tahlil qiluvchi sun'iy intellekt yordamchisisiz. Ismingiz "FinBot".
 
-STRICT RULES:
-1. Answer ONLY using information from the provided document excerpts
-2. If the answer is not in the excerpts, say exactly: "Информация не найдена в предоставленных документах."
-3. NEVER invent, extrapolate, or assume data not explicitly present
-4. Always cite your source (file name and page/sheet)
-5. For numbers: copy them exactly as they appear, do not calculate or estimate
-6. Respond in the same language as the question (Russian or Uzbek)
-7. Be concise and precise — financial users need accuracy, not verbosity
+═══════════════════════════════════════════════════
+MUTLAQ QOIDALAR (BUZIB BO'LMAYDI):
+═══════════════════════════════════════════════════
 
-OUTPUT FORMAT (JSON):
+1. FAQAT O'ZBEK TILIDA javob bering — savol qaysi tilda bo'lsa ham, JAVOB FAQAT O'ZBEK TILIDA bo'lishi shart.
+
+2. FAQAT taqdim etilgan hujjat parchalaridan foydalaning. Agar javob hujjatlarda bo'lmasa, AYNAN shunday yozing:
+   "Bu ma'lumot taqdim etilgan hujjatlarda topilmadi."
+
+3. HECH QACHON:
+   - Ma'lumot o'ylab topmang
+   - Taxmin yoki ko'rsatma beritmang
+   - Hujjatlarda ko'rsatilmagan raqamlarni ishlatmang
+   - Interpolatsiya yoki hisob-kitob qilmang
+
+4. Har doim MANBA ko'rsating: fayl nomi va sahifa/varaq raqami.
+
+5. Raqamlarni AYNAN hujjatda yozilganidek ko'chiring — hisob-kitob qilmasdan.
+
+6. Javob ANIQ va QISQA bo'lsin — moliyaviy foydalanuvchilar aniqlikni qadriyatlar.
+
+7. Professional va rasmiy O'zbek tilida muloqot qiling.
+
+═══════════════════════════════════════════════════
+JAVOB FORMATI (JSON):
+═══════════════════════════════════════════════════
 {
-  "answer": "...",
+  "answer": "O'zbek tilidagi to'liq va aniq javob. Ko'rsatkich qiymati va manba majburiy.",
   "confidence": 0.0-1.0,
-  "reasoning": "brief explanation of how you found this",
-  "sources_used": ["filename:page"]
-}"""
+  "sources_used": ["fayl_nomi:sahifa_yoki_varaq"]
+}
 
-USER_PROMPT_TEMPLATE = """QUESTION: {question}
+MUHIM: JSON formatidan BOSHQA hech narsa yozmang. Markdown, ``` blok, yoki boshqa belgilar QILINMAYDI."""
 
-DOCUMENT EXCERPTS:
+
+USER_PROMPT_TEMPLATE = """SAVOL: {question}
+
+═══════════════════════════════════════════════
+HUJJAT PARCHALARI (faqat shu ma'lumotlardan foydalaning):
+═══════════════════════════════════════════════
 {context}
+═══════════════════════════════════════════════
 
-Based ONLY on the above excerpts, answer the question in JSON format."""
+Yuqoridagi hujjat parchalarini diqqat bilan o'qing va FAQAT ularga asoslanib, O'ZBEK TILIDA JSON formatida javob bering.
+Agar javob hujjatlarda bo'lmasa: {{"answer": "Bu ma'lumot taqdim etilgan hujjatlarda topilmadi.", "confidence": 0.0, "sources_used": []}}"""
 
 
 class LLMQAModule:
     """
     LLM-based QA for complex reasoning over retrieved context.
-    
+
     Provider routing:
     - openai: GPT-4o-mini / GPT-4o
     - anthropic: Claude claude-sonnet-4-20250514
     - ollama: Local models (Llama3, Mistral, etc.)
+    - google: Treated as OpenAI-compatible (Gemini via OpenAI endpoint)
     """
 
     def __init__(self):
@@ -67,11 +94,18 @@ class LLMQAModule:
         if self._client is not None:
             return self._client
 
-        if self._provider == "openai":
+        # Both "openai" and "google" use the OpenAI-compatible client
+        if self._provider in ("openai", "google"):
             try:
                 from openai import AsyncOpenAI
                 self._client = AsyncOpenAI(
                     api_key=settings.LLM_API_KEY,
+                    base_url=settings.LLM_BASE_URL,
+                )
+                logger.info(
+                    "LLM client initialized",
+                    provider=self._provider,
+                    model=settings.LLM_MODEL,
                     base_url=settings.LLM_BASE_URL,
                 )
             except ImportError:
@@ -96,6 +130,12 @@ class LLMQAModule:
             except ImportError:
                 raise RuntimeError("openai package needed for Ollama. Run: pip install openai")
 
+        else:
+            raise ValueError(
+                f"Unknown LLM provider: '{self._provider}'. "
+                f"Supported: openai, google, anthropic, ollama"
+            )
+
         return self._client
 
     async def answer(
@@ -107,16 +147,11 @@ class LLMQAModule:
         """
         Generate an answer using the LLM over retrieved context.
 
-        Args:
-            question: Original user question.
-            chunks: Retrieved and ranked chunks.
-            analysis: Query analysis result.
-
         Returns:
             (answer_text, confidence_score)
         """
         if not chunks:
-            return "Информация не найдена в предоставленных документах.", 0.0
+            return "Bu ma'lumot taqdim etilgan hujjatlarda topilmadi.", 0.0
 
         context = self._build_context(chunks)
         prompt = USER_PROMPT_TEMPLATE.format(
@@ -127,20 +162,23 @@ class LLMQAModule:
         with TimingLogger("llm_call", logger, provider=self._provider):
             try:
                 raw_response = await self._call_llm(prompt)
+                logger.debug("Raw LLM response received", length=len(raw_response))
                 answer, confidence = self._parse_response(raw_response)
             except Exception as e:
-                logger.error("LLM call failed", error=str(e))
-                # Graceful fallback — return best chunk content
+                logger.error("LLM call failed", error=str(e), exc_info=True)
+                # Graceful fallback — return best chunk content in Uzbek
                 answer = self._fallback_answer(chunks, question)
-                confidence = 0.3
+                confidence = 0.25
 
+        # Final safety check — ensure answer is not empty or just whitespace/JSON
+        answer = self._sanitize_answer(answer)
         return answer, confidence
 
     async def _call_llm(self, user_prompt: str) -> str:
         """Dispatch to the appropriate LLM provider."""
         client = self._get_client()
 
-        if self._provider in ("openai", "ollama"):
+        if self._provider in ("openai", "google", "ollama"):
             response = await client.chat.completions.create(
                 model=settings.LLM_MODEL,
                 messages=[
@@ -149,9 +187,10 @@ class LLMQAModule:
                 ],
                 max_tokens=settings.LLM_MAX_TOKENS,
                 temperature=settings.LLM_TEMPERATURE,
-                response_format={"type": "json_object"},
+                # Note: response_format json_object not supported by all Gemini endpoints
+                # We handle JSON parsing robustly instead
             )
-            return response.choices[0].message.content
+            return response.choices[0].message.content or ""
 
         elif self._provider == "anthropic":
             response = await client.messages.create(
@@ -165,23 +204,97 @@ class LLMQAModule:
         raise ValueError(f"Unknown LLM provider: {self._provider}")
 
     def _parse_response(self, raw: str) -> Tuple[str, float]:
-        """Parse the LLM JSON response into (answer, confidence)."""
+        """
+        Parse the LLM JSON response into (answer, confidence).
+
+        Handles:
+        - Clean JSON: {"answer": "...", "confidence": 0.9}
+        - Markdown-wrapped: ```json\n{...}\n```
+        - JSON embedded in text: some text {"answer": "..."} more text
+        - Partial JSON: missing fields
+        """
+        if not raw or not raw.strip():
+            return "Javob olinmadi.", 0.0
+
+        # Step 1: Try direct JSON parse
+        cleaned = raw.strip()
         try:
-            data = json.loads(raw)
-            answer = data.get("answer", "").strip()
-            confidence = float(data.get("confidence", 0.5))
-            confidence = max(0.0, min(1.0, confidence))  # clamp
+            data = json.loads(cleaned)
+            return self._extract_from_dict(data)
+        except (json.JSONDecodeError, ValueError):
+            pass
 
-            if not answer:
-                return "Ответ не сформирован.", 0.1
+        # Step 2: Strip markdown code fences (```json ... ``` or ``` ... ```)
+        # Handle both opening and closing fences
+        fence_pattern = re.compile(r"```(?:json)?\s*([\s\S]*?)\s*```", re.IGNORECASE)
+        fence_match = fence_pattern.search(cleaned)
+        if fence_match:
+            try:
+                data = json.loads(fence_match.group(1))
+                return self._extract_from_dict(data)
+            except (json.JSONDecodeError, ValueError):
+                pass
 
-            return answer, confidence
+        # Step 3: Find any JSON object in the text using regex
+        json_pattern = re.compile(r"\{[\s\S]*\}", re.DOTALL)
+        json_match = json_pattern.search(cleaned)
+        if json_match:
+            try:
+                data = json.loads(json_match.group(0))
+                return self._extract_from_dict(data)
+            except (json.JSONDecodeError, ValueError):
+                pass
 
-        except (json.JSONDecodeError, ValueError, KeyError) as e:
-            logger.warning("Failed to parse LLM JSON response", error=str(e))
-            # Return raw text as answer
-            clean = raw.strip().replace("```json", "").replace("```", "")
-            return clean[:2000] if clean else "Ошибка формирования ответа.", 0.1
+        # Step 4: The LLM returned plain text — treat as answer directly
+        # But only if it looks like actual Uzbek/Russian text (not JSON garbage)
+        plain = cleaned.replace("```json", "").replace("```", "").strip()
+
+        # If it's meaningful text (not just symbols or broken JSON fragments)
+        if len(plain) > 20 and not plain.startswith("{") and not plain.startswith("["):
+            logger.warning("LLM returned plain text instead of JSON, using as answer")
+            return plain[:2000], 0.4
+
+        logger.error("Cannot extract answer from LLM response", raw=raw[:200])
+        return "Javob shakllantirishda xatolik yuz berdi.", 0.0
+
+    def _extract_from_dict(self, data: dict) -> Tuple[str, float]:
+        """Extract answer and confidence from a parsed JSON dict."""
+        answer = data.get("answer", "").strip()
+        confidence = float(data.get("confidence", 0.5))
+        confidence = max(0.0, min(1.0, confidence))
+
+        if not answer or len(answer) < 5:
+            return "Javob shakllantirilmadi.", 0.1
+
+        return answer, confidence
+
+    def _sanitize_answer(self, answer: str) -> str:
+        """
+        Final safety pass on the answer string:
+        - Remove any remaining markdown artifacts
+        - Ensure it's not raw JSON
+        - Ensure minimum length
+        """
+        if not answer or not answer.strip():
+            return "Bu ma'lumot taqdim etilgan hujjatlarda topilmadi."
+
+        # Remove leading/trailing markdown fences if LLM somehow puts them in
+        answer = answer.strip()
+        answer = re.sub(r"^```(?:json|uz|ru)?\s*", "", answer)
+        answer = re.sub(r"\s*```$", "", answer)
+        answer = answer.strip()
+
+        # If the "answer" is actually raw JSON, extract just the answer field
+        if answer.startswith("{") and '"answer"' in answer:
+            try:
+                parsed = json.loads(answer)
+                inner = parsed.get("answer", "").strip()
+                if inner:
+                    return inner
+            except Exception:
+                pass
+
+        return answer
 
     def _build_context(self, chunks: List[Union[DocumentChunk, TableChunk]]) -> str:
         """
@@ -194,25 +307,36 @@ class LLMQAModule:
 
             if isinstance(chunk, TableChunk):
                 content = chunk.summary
+                chunk_label = "JADVAL"
             else:
                 content = chunk.content
+                chunk_label = "MATN"
 
-            # Truncate very long chunks to stay within context window
-            content = content[:1500] if len(content) > 1500 else content
-            parts.append(f"[{i}] Source: {source}\n{content}")
+            # Increase truncation to 2000 chars to preserve more financial data
+            content = content[:2000] if len(content) > 2000 else content
+            parts.append(
+                f"[{i}] {chunk_label} | Manba: {source}\n{content}"
+            )
 
-        return "\n\n---\n\n".join(parts)
+        return "\n\n" + ("─" * 50) + "\n\n".join(parts)
 
     def _fallback_answer(
         self, chunks: List[Union[DocumentChunk, TableChunk]], question: str
     ) -> str:
         """
         Emergency fallback when LLM is unavailable.
-        Returns the most relevant chunk content directly.
+        Returns the most relevant chunk content with Uzbek prefix.
         """
         if not chunks:
-            return "Информация не найдена."
+            return "Ma'lumot topilmadi. Iltimos, qayta so'rov yuboring."
 
         best = chunks[0]
+        source = best.source_label
         content = best.summary if isinstance(best, TableChunk) else best.content
-        return f"Из документа «{best.metadata.file_name}»:\n\n{content[:500]}..."
+
+        # Format as Uzbek paragraph
+        return (
+            f"«{source}» hujjatidan topilgan ma'lumot:\n\n"
+            f"{content[:800]}"
+            + ("\n\n[To'liq ma'lumot uchun hujjatni ko'ring]" if len(content) > 800 else "")
+        )

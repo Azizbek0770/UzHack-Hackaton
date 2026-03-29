@@ -20,6 +20,16 @@ def add_severity(
     return event_dict
 
 
+def add_logger_name_safe(
+    logger: WrappedLogger, method: str, event_dict: EventDict
+) -> EventDict:
+    """Safe version of add_logger_name that works with PrintLogger (no .name attr)."""
+    name = getattr(logger, "name", None)
+    if name:
+        event_dict["logger"] = name
+    return event_dict
+
+
 def configure_logging(debug: bool = False) -> None:
     """
     Configure structlog and stdlib logging.
@@ -42,7 +52,7 @@ def configure_logging(debug: bool = False) -> None:
 
     shared_processors: list[Any] = [
         structlog.contextvars.merge_contextvars,
-        structlog.stdlib.add_logger_name,
+        add_logger_name_safe,
         structlog.stdlib.add_log_level,
         structlog.processors.TimeStamper(fmt="iso"),
         structlog.processors.StackInfoRenderer(),

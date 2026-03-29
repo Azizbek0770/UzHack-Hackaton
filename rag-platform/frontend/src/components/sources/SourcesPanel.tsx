@@ -9,11 +9,11 @@ interface SourcesPanelProps {
 }
 
 const DOC_TYPE_LABELS: Record<string, string> = {
-  financial_report: 'Фин. отчёт',
-  annual_report: 'Год. отчёт',
-  disclosure: 'Раскрытие',
-  metadata: 'Метаданные',
-  unknown: 'Документ',
+  financial_report: 'Moliyaviy hisobot',
+  annual_report: 'Yillik hisobot',
+  disclosure: 'Ma\'lumot oshkoraligi',
+  metadata: 'Metama\'lumotlar',
+  unknown: 'Hujjat',
 }
 
 export function SourcesPanel({ sources }: SourcesPanelProps) {
@@ -30,7 +30,7 @@ export function SourcesPanel({ sources }: SourcesPanelProps) {
       <div className="flex items-center gap-2 mb-3 px-1">
         <div className="h-px flex-1 bg-obsidian-700" />
         <span className="text-xs text-obsidian-500 font-medium uppercase tracking-widest">
-          Источники ({sources.length})
+          Manbalar ({sources.length})
         </span>
         <div className="h-px flex-1 bg-obsidian-700" />
       </div>
@@ -54,12 +54,12 @@ function SourceTag({ source, index }: { source: SourceReference; index: number }
   const Icon = isTable ? Table2 : FileText
 
   const location = source.page
-    ? `с. ${source.page}`
+    ? `bet ${source.page}`
     : source.sheet
-    ? `Лист: ${source.sheet}`
+    ? `Varaq: ${source.sheet}`
     : null
 
-  const docLabel = DOC_TYPE_LABELS[source.doc_type] ?? 'Документ'
+  const docLabel = DOC_TYPE_LABELS[source.doc_type] ?? 'Hujjat'
 
   return (
     <motion.div
@@ -144,7 +144,7 @@ function SourceTag({ source, index }: { source: SourceReference; index: number }
               'text-xs text-obsidian-400 leading-relaxed font-mono',
             )}>
               <div className="text-[10px] text-gold-500/60 mb-1 uppercase tracking-wider">
-                Фрагмент документа
+                Hujjat parchasi
               </div>
               {source.excerpt}
             </div>

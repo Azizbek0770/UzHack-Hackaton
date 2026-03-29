@@ -1,1 +1,0 @@
-"""Table-focused QA package."""

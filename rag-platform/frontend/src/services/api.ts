@@ -1,7 +1,7 @@
 import axios, { AxiosInstance, AxiosError } from 'axios'
 import type { QueryRequest, QueryResponse, PipelineStatus } from './types'
 
-const BASE_URL = (import.meta as any).env.VITE_API_URL ?? '/api/v1'
+const BASE_URL = import.meta.env.VITE_API_URL ?? '/api/v1'
 
 class APIService {
   private client: AxiosInstance

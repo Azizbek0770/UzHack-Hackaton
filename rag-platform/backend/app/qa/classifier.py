@@ -1,7 +1,7 @@
 """
 Query Understanding Layer
 Classifies queries by type to route them to the correct QA strategy.
-Rule-based with regex patterns for multilingual financial queries.
+Rule-based with regex patterns for multilingual financial queries (Uzbek/Russian/English).
 """
 
 from __future__ import annotations
@@ -36,33 +36,40 @@ NUMERIC_PATTERNS = [
     # Russian
     r"сколько", r"какой объем", r"какова сумма", r"размер",
     r"величина", r"итого", r"всего", r"\d+.*год",
-    # Uzbek
-    r"qancha", r"necha", r"miqdor",
+    # Uzbek — expanded
+    r"qancha", r"necha", r"miqdor", r"hajmi", r"summasi",
+    r"nechta", r"qanchaga", r"ulushi", r"qanday miqdor",
+    r"ko'rsatkichi", r"qanday bo'lgan",
     # English
-    r"how much", r"what is the", r"total", r"amount",
+    r"how much", r"what is the", r"total", r"amount", r"how many",
 ]
 
 TABLE_PATTERNS = [
+    # Russian
     r"таблиц", r"показател", r"финансов", r"баланс",
     r"отчет", r"за\s+\d{4}", r"динамик", r"рост",
+    # English
     r"table", r"balance", r"sheet", r"statement",
-    r"jadval", r"ko'rsatkich",
+    # Uzbek — expanded
+    r"jadval", r"ko'rsatkich", r"hisobot", r"moliyaviy",
+    r"aktivlar", r"passivlar", r"kapital\b", r"foyda\b", r"zarar\b",
+    r"daromad\b", r"tushum\b", r"xarajat\b",
 ]
 
 MULTI_HOP_PATTERNS = [
     r"по сравнению", r"разница", r"изменени", r"рост.*по отношению",
     r"compared", r"difference", r"change.*from",
-    r"solishtirgan",
+    r"solishtirgan", r"farqi", r"o'zgarishi", r"o'sishi",
 ]
 
 METRIC_PATTERNS = {
-    "revenue": [r"выручк", r"доход", r"revenue", r"daromad", r"tushum"],
-    "profit": [r"прибыл", r"profit", r"foyda"],
-    "assets": [r"актив", r"assets", r"aktivlar"],
-    "liabilities": [r"обязательств", r"liabilities", r"majburiyat"],
-    "equity": [r"капитал", r"equity", r"kapital"],
-    "loss": [r"убыток", r"loss", r"zarar"],
-    "employees": [r"сотрудник", r"работник", r"employees", r"xodim"],
+    "revenue": [r"выручк", r"доход", r"revenue", r"daromad", r"tushum", r"реализация"],
+    "profit": [r"прибыл", r"profit", r"foyda", r"sof foyda"],
+    "assets": [r"актив", r"assets", r"aktivlar", r"баланс"],
+    "liabilities": [r"обязательств", r"liabilities", r"majburiyat", r"passiv"],
+    "equity": [r"капитал", r"equity", r"kapital", r"собственный"],
+    "loss": [r"убыток", r"loss", r"zarar", r"sof zarar"],
+    "employees": [r"сотрудник", r"работник", r"employees", r"xodim", r"ishchi"],
 }
 
 
@@ -152,19 +159,24 @@ class QueryClassifier:
     def _extract_company(self, text: str) -> Optional[str]:
         """
         Heuristic company extraction.
-        Looks for CamelCase words or quoted company names.
+        Handles Uzbek AJ/ATB/MCHJ, Russian АО/ОАО, and quoted names.
         """
-        # Quoted company name
-        quoted = re.search(r'["\']([^"\']{3,50})["\']', text)
+        # Standard quotes
+        quoted = re.search(r'"([^"]{3,50})"', text)
         if quoted:
-            return quoted.group(1)
+            return quoted.group(1).strip()
 
-        # All-caps abbreviation (e.g. АО, ОАО, ООО + name)
+        # Cyrillic angle quotes «Company Name»
+        cyrillic_quoted = re.search(r'«([^»]{3,50})»', text)
+        if cyrillic_quoted:
+            return cyrillic_quoted.group(1).strip()
+
+        # Uzbek/Russian legal forms + company name
         legal_match = re.search(
-            r'(?:АО|ОАО|ООО|ЗАО|АКБ|JSC|LLC|AJ)\s+[«"]?([А-ЯA-Z][^\s,\.]{2,30})',
+            r'(?:АО|ОАО|ООО|ЗАО|АКБ|JSC|LLC|AJ|ATB|MCHJ|QK)\s+[«"]?([А-ЯA-Za-z][^\s,\.]{2,40})',
             text,
         )
         if legal_match:
-            return legal_match.group(1)
+            return legal_match.group(1).strip()
 
         return None

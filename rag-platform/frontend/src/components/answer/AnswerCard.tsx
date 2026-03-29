@@ -1,18 +1,11 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { motion } from 'framer-motion'
 import {
-  CheckCircle,
-  AlertCircle,
-  Info,
-  Clock,
-  Table2,
-  AlignLeft,
-  Hash,
-  Network,
-  Copy,
-  Check,
+  CheckCircle, AlertCircle, Info, Clock,
+  Table2, AlignLeft, Hash, Network, Copy, Check,
 } from 'lucide-react'
 import clsx from 'clsx'
+import { FinBotAvatar } from '../ui/FinBotAvatar'
 import type { QueryResponse, QueryType, ConfidenceLevel } from '../../services/types'
 
 interface AnswerCardProps {
@@ -20,27 +13,48 @@ interface AnswerCardProps {
   question: string
 }
 
-// ── Query type badge config ───────────────────────────────────────────────────
 const QUERY_TYPE_CONFIG: Record<QueryType, { icon: React.ElementType; label: string; color: string }> = {
-  table: { icon: Table2, label: 'Табличный ответ', color: 'text-jade-400 bg-jade-500/10 border-jade-500/20' },
-  numeric: { icon: Hash, label: 'Числовой ответ', color: 'text-gold-400 bg-gold-500/10 border-gold-500/20' },
-  textual: { icon: AlignLeft, label: 'Текстовый ответ', color: 'text-blue-400 bg-blue-500/10 border-blue-500/20' },
-  multi_hop: { icon: Network, label: 'Многошаговый', color: 'text-purple-400 bg-purple-500/10 border-purple-500/20' },
+  table:     { icon: Table2,    label: 'Jadval javobi',      color: 'text-jade-400 bg-jade-500/10 border-jade-500/20' },
+  numeric:   { icon: Hash,      label: 'Raqamli javob',      color: 'text-gold-400 bg-gold-500/10 border-gold-500/20' },
+  textual:   { icon: AlignLeft, label: 'Matnli javob',       color: 'text-blue-400 bg-blue-500/10 border-blue-500/20' },
+  multi_hop: { icon: Network,   label: "Ko'p bosqichli",     color: 'text-purple-400 bg-purple-500/10 border-purple-500/20' },
 }
 
 const CONFIDENCE_CONFIG: Record<ConfidenceLevel, { color: string; barColor: string; icon: React.ElementType; label: string }> = {
-  high: { color: 'text-jade-400', barColor: 'bg-jade-500', icon: CheckCircle, label: 'Высокая уверенность' },
-  medium: { color: 'text-gold-400', barColor: 'bg-gold-500', icon: Info, label: 'Средняя уверенность' },
-  low: { color: 'text-crimson-400', barColor: 'bg-crimson-500', icon: AlertCircle, label: 'Низкая уверенность' },
+  high:   { color: 'text-jade-400',    barColor: 'bg-gradient-to-r from-jade-500 to-jade-400',    icon: CheckCircle,  label: "Yuqori ishonch" },
+  medium: { color: 'text-gold-400',    barColor: 'bg-gradient-to-r from-gold-500 to-gold-300',    icon: Info,         label: "O'rta ishonch"  },
+  low:    { color: 'text-crimson-400', barColor: 'bg-gradient-to-r from-crimson-500 to-crimson-400', icon: AlertCircle, label: "Past ishonch"  },
 }
 
 export function AnswerCard({ response, question }: AnswerCardProps) {
   const [copied, setCopied] = useState(false)
+  const [displayedText, setDisplayedText] = useState('')
+  const [isTyping, setIsTyping] = useState(true)
 
   const queryConfig = QUERY_TYPE_CONFIG[response.query_type]
-  const confConfig = CONFIDENCE_CONFIG[response.confidence_level]
-  const ConfIcon = confConfig.icon
-  const QueryIcon = queryConfig.icon
+  const confConfig  = CONFIDENCE_CONFIG[response.confidence_level]
+  const ConfIcon    = confConfig.icon
+  const QueryIcon   = queryConfig.icon
+
+  // Word-by-word streaming effect
+  useEffect(() => {
+    const words = response.answer.split(' ')
+    let idx = 0
+    setDisplayedText('')
+    setIsTyping(true)
+
+    const timer = setInterval(() => {
+      if (idx >= words.length) {
+        setIsTyping(false)
+        clearInterval(timer)
+        return
+      }
+      setDisplayedText(prev => (prev ? prev + ' ' + words[idx] : words[idx]))
+      idx++
+    }, 18)
+
+    return () => clearInterval(timer)
+  }, [response.answer])
 
   const handleCopy = async () => {
     await navigator.clipboard.writeText(response.answer)
@@ -64,7 +78,6 @@ export function AnswerCard({ response, question }: AnswerCardProps) {
         {/* ── Header ─────────────────────────────────────────────────────── */}
         <div className="px-6 py-4 border-b border-obsidian-700 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            {/* Query type badge */}
             <span className={clsx(
               'flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full border',
               queryConfig.color
@@ -75,13 +88,11 @@ export function AnswerCard({ response, question }: AnswerCardProps) {
           </div>
 
           <div className="flex items-center gap-3">
-            {/* Processing time */}
-            <span className="flex items-center gap-1.5 text-xs text-obsidian-600">
+            <span className="flex items-center gap-1.5 text-xs text-obsidian-500">
               <Clock size={11} />
               {response.processing_time_ms.toFixed(0)} ms
             </span>
 
-            {/* Copy button */}
             <motion.button
               onClick={handleCopy}
               whileTap={{ scale: 0.92 }}
@@ -97,16 +108,26 @@ export function AnswerCard({ response, question }: AnswerCardProps) {
           </div>
         </div>
 
+        {/* ── FinBot Label ─────────────────────────────────────────────────── */}
+        <div className="px-6 pt-5 pb-2 flex items-center gap-2">
+          <FinBotAvatar size={16} />
+          <span className="text-[10px] font-mono text-gold-400/70 uppercase tracking-widest">
+            FinBot javobi
+          </span>
+          {isTyping && (
+            <motion.span
+              animate={{ opacity: [1, 0, 1] }}
+              transition={{ repeat: Infinity, duration: 0.8 }}
+              className="w-1.5 h-3.5 bg-gold-500 rounded-sm inline-block ml-1"
+            />
+          )}
+        </div>
+
         {/* ── Answer Body ─────────────────────────────────────────────────── */}
-        <div className="px-6 py-5">
-          <motion.p
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.15, duration: 0.5 }}
-            className="text-[15px] leading-relaxed text-gray-100"
-          >
-            <HighlightedAnswer text={response.answer} question={question} />
-          </motion.p>
+        <div className="px-6 pb-5">
+          <p className="text-[15px] leading-relaxed text-gray-100">
+            <HighlightedAnswer text={displayedText} question={question} />
+          </p>
         </div>
 
         {/* ── Confidence Bar ──────────────────────────────────────────────── */}
@@ -123,12 +144,11 @@ export function AnswerCard({ response, question }: AnswerCardProps) {
             </span>
           </div>
 
-          {/* Progress bar */}
           <div className="h-1.5 bg-obsidian-700 rounded-full overflow-hidden">
             <motion.div
               initial={{ width: 0 }}
               animate={{ width: `${response.confidence * 100}%` }}
-              transition={{ delay: 0.3, duration: 1, ease: [0.4, 0, 0.2, 1] }}
+              transition={{ delay: 0.4, duration: 1.2, ease: [0.4, 0, 0.2, 1] }}
               className={clsx('h-full rounded-full', confConfig.barColor)}
             />
           </div>
@@ -141,17 +161,15 @@ export function AnswerCard({ response, question }: AnswerCardProps) {
 // ── Keyword Highlighter ───────────────────────────────────────────────────────
 
 function HighlightedAnswer({ text, question }: { text: string; question: string }) {
-  // Extract significant words from the question (4+ chars)
   const keywords = question
     .toLowerCase()
     .split(/\s+/)
     .filter((w) => w.length >= 4)
-    .map((w) => w.replace(/[^\wа-яёА-ЯЁ]/g, ''))
+    .map((w) => w.replace(/[^\wа-яёА-ЯЁa-zA-Z']/g, ''))
     .filter(Boolean)
 
   if (keywords.length === 0) return <>{text}</>
 
-  // Split text by keyword matches
   const pattern = new RegExp(`(${keywords.join('|')})`, 'gi')
   const parts = text.split(pattern)
 
@@ -159,10 +177,7 @@ function HighlightedAnswer({ text, question }: { text: string; question: string 
     <>
       {parts.map((part, i) =>
         keywords.some((k) => k.toLowerCase() === part.toLowerCase()) ? (
-          <mark
-            key={i}
-            className="bg-gold-500/15 text-gold-300 rounded px-0.5 not-italic"
-          >
+          <mark key={i} className="bg-gold-500/15 text-gold-300 rounded px-0.5 not-italic">
             {part}
           </mark>
         ) : (

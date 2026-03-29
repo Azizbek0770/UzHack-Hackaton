@@ -155,18 +155,25 @@ class HybridRetriever:
         Lightweight rule-based query rewriting to improve retrieval.
 
         Adds financial context and expands abbreviations.
-        For a production system, this could call an LLM for HyDE.
+        Works in Uzbek, Russian, and English.
         """
         rewrites = {
             # Russian → expand common abbreviations
-            "выручка": "выручка от реализации доходы от продаж revenue",
-            "активы": "суммарные активы total assets баланс",
-            "прибыль": "чистая прибыль net profit доходы",
-            "убыток": "чистый убыток net loss",
-            "капитал": "собственный капитал shareholders equity",
-            # Uzbek
+            "выручка": "выручка от реализации доходы от продаж revenue daromad",
+            "активы": "суммарные активы total assets баланс aktivlar",
+            "прибыль": "чистая прибыль net profit доходы foyda",
+            "убыток": "чистый убыток net loss zarar",
+            "капитал": "собственный капитал shareholders equity kapital",
+            # Uzbek → expand with Russian/English synonyms
             "daromad": "daromad tushum выручка revenue",
             "foyda": "sof foyda net profit чистая прибыль",
+            "zarar": "sof zarar net loss чистый убыток",
+            "aktivlar": "jami aktivlar total assets суммарные активы",
+            "kapital": "o'z kapitali собственный капитал equity",
+            "majburiyat": "majburiyatlar обязательства liabilities",
+            "hisobot": "moliyaviy hisobot финансовый отчет financial report",
+            "balans": "buxgalteriya balansi бухгалтерский баланс balance sheet",
+            "xodim": "xodimlar soni сотрудники employees",
         }
 
         enhanced = query
@@ -177,3 +184,4 @@ class HybridRetriever:
                 break
 
         return enhanced
+

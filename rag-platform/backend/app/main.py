@@ -108,44 +108,10 @@ def create_app() -> FastAPI:
     @app.get("/health", tags=["system"])
     async def health_check():
         pipeline_ready = hasattr(app.state, "pipeline") and app.state.pipeline is not None
-        retrieval_stats = {"text_chunks": 0, "table_chunks": 0}
-        if pipeline_ready and hasattr(app.state.pipeline, "index_manager"):
-            retrieval_stats = {
-                "text_chunks": app.state.pipeline.index_manager.text_index.size,
-                "table_chunks": app.state.pipeline.index_manager.table_index.size,
-            }
         return {
             "status": "ok" if pipeline_ready else "degraded",
             "pipeline_ready": pipeline_ready,
             "version": settings.VERSION,
-            "retrieval": retrieval_stats,
-        }
-
-    @app.get("/metrics", tags=["system"])
-    async def get_metrics():
-        return {
-            "latency_avg_ms": 142.5,
-            "latency_p95_ms": 350.2,
-            "confidence_avg": 0.89
-        }
-
-    @app.get("/ingestion/report", tags=["system"])
-    async def get_ingestion_report():
-        return {
-            "processed_files": 42,
-            "failed_files": 0,
-            "files": []
-        }
-
-    @app.get("/audit/runs", tags=["system"])
-    async def get_audit_runs():
-        return {
-            "ingestion_runs": [
-                {"timestamp": "2026-03-29T00:00:00Z", "status": "success"}
-            ],
-            "qa_runs": [
-                {"question": "What is the NBU revenue for 2024?", "timestamp": "2026-03-29T00:15:00Z"}
-            ]
         }
 
     return app

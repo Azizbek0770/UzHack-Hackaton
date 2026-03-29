@@ -44,8 +44,8 @@ export function StatusBar() {
             )}
           />
         </motion.div>
-        <span className="text-xs text-obsidian-500">
-          {online === null ? 'Connecting...' : online ? 'Online' : 'Offline'}
+        <span className="text-xs text-obsidian-500 font-medium">
+          {online === null ? 'Ulanmoqda...' : online ? 'Onlayn' : 'Oflayn'}
         </span>
       </div>
 
@@ -54,17 +54,17 @@ export function StatusBar() {
           <div className="h-3 w-px bg-obsidian-700" />
 
           {/* Text chunks */}
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1.5" title="Tizimdagi jami matn bloklari">
             <Database size={11} className="text-obsidian-600" />
             <span className="text-xs font-mono text-obsidian-500">
-              {status.indexes.text_chunks.toLocaleString()} chunks
+              {status.indexes.text_chunks.toLocaleString()} bloklar
             </span>
           </div>
 
           <div className="h-3 w-px bg-obsidian-700" />
 
           {/* Model info */}
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1.5" title="LLM Modeli">
             <Brain size={11} className="text-obsidian-600" />
             <span className="text-xs text-obsidian-500">
               {status.config.llm_model}
@@ -74,7 +74,7 @@ export function StatusBar() {
           <div className="h-3 w-px bg-obsidian-700" />
 
           {/* Embedding model */}
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1.5" title="Embedding Modeli">
             <Cpu size={11} className="text-obsidian-600" />
             <span className="text-xs text-obsidian-500 truncate max-w-[120px]">
               {status.config.embedding_model.split('/').pop()}

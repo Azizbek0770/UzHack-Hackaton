@@ -66,8 +66,13 @@ class RAGPipeline:
         """
         Initialize the pipeline.
         Loads indexes from disk if available, otherwise runs ingestion.
+        Cache is always cleared on startup to prevent stale bad answers from persisting.
         """
         index_path = settings.INDEX_DIR
+
+        # Always clear cache on startup — prevents stale/failed LLM answers from replaying
+        self.cache.clear()
+        logger.info("Query cache cleared on startup")
 
         # Try to load existing indexes
         loaded = self.index_manager.load(index_path) and self.bm25.load(index_path)
@@ -89,6 +94,7 @@ class RAGPipeline:
             bm25_retriever=self.bm25,
             embedding_engine=self.embedder,
         )
+
 
     async def _run_ingestion(self) -> None:
         """Full ingestion: parse → embed → index → persist."""
@@ -239,8 +245,12 @@ class RAGPipeline:
             debug=debug_info,
         )
 
-        # Cache the response
-        self.cache.set(request.question, response)
+        # Only cache responses where LLM actually succeeded (confidence >= 0.4)
+        # This prevents failed LLM fallback answers from being replayed on future queries
+        if final_confidence >= 0.4:
+            self.cache.set(request.question, response)
+        else:
+            logger.debug("Skipping cache — low confidence response", confidence=final_confidence)
 
         logger.info(
             "Query complete",
@@ -288,7 +298,7 @@ class RAGPipeline:
 
     def _error_response(self, message: str, start: float) -> QueryResponse:
         return QueryResponse(
-            answer=f"Ошибка системы: {message}",
+            answer=f"Tizim xatosi: {message}",
             confidence=0.0,
             confidence_level=ConfidenceLevel.LOW,
             query_type=QueryType.TEXTUAL,
@@ -298,7 +308,13 @@ class RAGPipeline:
 
     def _no_results_response(self, start: float, query_type: QueryType) -> QueryResponse:
         return QueryResponse(
-            answer="Информация по данному запросу не найдена в предоставленных документах.",
+            answer=(
+                "Kechirasiz, ushbu so'rov bo'yicha ma'lumot topilmadi.\n\n"
+                "💡 Maslahat:\n"
+                "• Kompaniya nomini aniqroq yozing (masalan: \"Agrobank\", \"Xalq Banki\")\n"
+                "• Moliyaviy ko'rsatkich nomini qo'shing (daromad, foyda, aktivlar)\n"
+                "• Yilni ko'rsating (masalan: 2022, 2023)"
+            ),
             confidence=0.0,
             confidence_level=ConfidenceLevel.LOW,
             query_type=query_type,

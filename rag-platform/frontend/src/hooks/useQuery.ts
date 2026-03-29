@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback, useRef, useEffect } from 'react'
 import { api } from '../services/api'
 import type { QueryRequest, QueryResponse, HistoryEntry } from '../services/types'
 
@@ -76,10 +76,10 @@ export function useQueryHistory() {
 export function useDebounce<T>(value: T, delay: number): T {
   const [debounced, setDebounced] = useState(value)
 
-  useState(() => {
+  useEffect(() => {
     const timer = setTimeout(() => setDebounced(value), delay)
     return () => clearTimeout(timer)
-  })
+  }, [value, delay])
 
   return debounced
 }

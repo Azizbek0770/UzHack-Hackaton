@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion'
-import { AlertTriangle, RefreshCw, ServerCrash } from 'lucide-react'
+import { AlertTriangle, RefreshCw, ServerCrash, Sparkles } from 'lucide-react'
 import clsx from 'clsx'
 
 // ── Loading Skeleton ──────────────────────────────────────────────────────────
@@ -56,7 +56,7 @@ export function LoadingSkeleton() {
         transition={{ duration: 1.8, repeat: Infinity, ease: 'easeInOut' }}
       >
         <span className="text-xs text-obsidian-500">
-          Анализируем документы...
+          Hujjatlar tahlil qilinmoqda...
         </span>
       </motion.div>
     </motion.div>
@@ -106,7 +106,7 @@ export function ErrorState({ message, onRetry }: ErrorStateProps) {
 
           <div className="flex-1 min-w-0">
             <h3 className="text-sm font-semibold text-crimson-300 mb-1">
-              {isNetworkError ? 'Нет связи с сервером' : 'Ошибка запроса'}
+              {isNetworkError ? 'Server bilan aloqa yo\'q' : 'So\'rovda xatolik'}
             </h3>
             <p className="text-xs text-crimson-400/70 leading-relaxed">
               {message}
@@ -114,8 +114,7 @@ export function ErrorState({ message, onRetry }: ErrorStateProps) {
 
             {isNetworkError && (
               <p className="mt-2 text-xs text-obsidian-500">
-                Убедитесь, что backend запущен на{' '}
-                <code className="font-mono text-obsidian-400">localhost:8000</code>
+                Backend <code className="font-mono text-obsidian-400">localhost:8000</code> portida ishlayotganiga ishonch hosil qiling.
               </p>
             )}
           </div>
@@ -131,7 +130,7 @@ export function ErrorState({ message, onRetry }: ErrorStateProps) {
               )}
             >
               <RefreshCw size={12} />
-              Повторить
+              Takrorlash
             </button>
           )}
         </div>
@@ -148,15 +147,33 @@ export function EmptyState() {
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={{ delay: 0.3, duration: 0.6 }}
-      className="text-center py-12 space-y-3"
+      className="text-center py-12 space-y-4"
     >
-      <div className="text-5xl mb-4">◈</div>
-      <p className="text-sm text-obsidian-500">
-        Задайте вопрос о финансах компании
-      </p>
-      <p className="text-xs text-obsidian-600">
-        Поддерживаются запросы на русском и узбекском языках
-      </p>
+      <motion.div 
+        animate={{ 
+          rotate: [0, 10, -10, 0],
+          scale: [1, 1.1, 1]
+        }}
+        transition={{ 
+          duration: 5, 
+          repeat: Infinity,
+          ease: "easeInOut"
+        }}
+        className="flex justify-center"
+      >
+        <div className="p-4 rounded-3xl bg-gold-500/5 border border-gold-500/10 relative">
+          <Sparkles className="text-gold-500/40" size={40} />
+          <div className="absolute inset-0 bg-gold-500/10 blur-xl rounded-full" />
+        </div>
+      </motion.div>
+      <div className="space-y-2">
+        <p className="text-sm text-obsidian-400 font-medium">
+          Moliyaviy ko'rsatkichlar bo'yicha savol bering
+        </p>
+        <p className="text-xs text-obsidian-500">
+          Tizim o'zbek va rus tillaridagi hisobotlarni tahlil qiladi
+        </p>
+      </div>
     </motion.div>
   )
 }
