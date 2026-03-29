@@ -165,10 +165,17 @@ class LLMQAModule:
                 logger.debug("Raw LLM response received", length=len(raw_response))
                 answer, confidence = self._parse_response(raw_response)
             except Exception as e:
-                logger.error("LLM call failed", error=str(e), exc_info=True)
-                # Graceful fallback — return best chunk content in Uzbek
-                answer = self._fallback_answer(chunks, question)
-                confidence = 0.25
+                error_msg = str(e)
+                logger.error("LLM call failed", error=error_msg, exc_info=True)
+                
+                # Check for rate limit / quota exceeded
+                if "429" in error_msg or "quota" in error_msg.lower() or "rate limit" in error_msg.lower():
+                    answer = "⚠️ LLM API limiti tugadi (Quota Exceeded yoki Rate Limit). Iltimos, .env faylida yangi API kalit qo'ying yoki biroz kuting."
+                    confidence = 0.0
+                else:
+                    # Graceful fallback — return best chunk content in Uzbek
+                    answer = self._fallback_answer(chunks, question)
+                    confidence = 0.25
 
         # Final safety check — ensure answer is not empty or just whitespace/JSON
         answer = self._sanitize_answer(answer)
@@ -333,10 +340,15 @@ class LLMQAModule:
         best = chunks[0]
         source = best.source_label
         content = best.summary if isinstance(best, TableChunk) else best.content
+        clean_content = self._clean_pdf_text(content)
 
         # Format as Uzbek paragraph
         return (
             f"«{source}» hujjatidan topilgan ma'lumot:\n\n"
-            f"{content[:800]}"
-            + ("\n\n[To'liq ma'lumot uchun hujjatni ko'ring]" if len(content) > 800 else "")
+            f"{clean_content[:800]}"
+            + ("\n\n[To'liq ma'lumot uchun hujjatni ko'ring]" if len(clean_content) > 800 else "")
         )
+
+    def _clean_pdf_text(self, text: str) -> str:
+        """Removes common parser artifacts like 'undefined'"""
+        return text.replace("undefined", "").strip()

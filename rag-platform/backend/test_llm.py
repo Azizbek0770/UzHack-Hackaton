@@ -6,12 +6,25 @@ from app.qa.classifier import QueryAnalysis, QueryType
 
 m = LLMQAModule()
 c = DocumentChunk(
-    content="Agrobank daromadi 2023 yilda 5 trln so'mni tashkil etdi.", 
-    chunk_id="1", 
-    metadata=DocumentMetadata(file_name="test.pdf", file_path="/fake"),
-    source_label="test.pdf p.1"
+    chunk_id="1",
+    content="Agrobank daromadi 2023 yilda 5 trln so'mni tashkil etdi.",
+    metadata=DocumentMetadata(
+        company="Agrobank",
+        file_name="test.pdf",
+        file_path="/fake"
+    ),
+    page=1
 )
-a = QueryAnalysis(query_type=QueryType.TEXTUAL, is_numeric=True, is_table_based=False, is_multi_hop=False, target_metric='revenue', target_year=2023, target_company='Agrobank', confidence=0.9)
+a = QueryAnalysis(
+    query_type=QueryType.TEXTUAL,
+    is_numeric=True,
+    is_table_based=False,
+    is_multi_hop=False,
+    target_metric='revenue',
+    target_year=2023,
+    target_company='Agrobank',
+    confidence=0.9
+)
 
 async def run():
     try:
