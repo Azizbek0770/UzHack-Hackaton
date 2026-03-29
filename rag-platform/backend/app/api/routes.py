@@ -1,198 +1,152 @@
+"""
+FastAPI Route Definitions
+All API endpoints for the RAG platform.
+"""
+
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from pathlib import Path
-import shutil
-import uuid
+import asyncio
+from typing import Any, Dict
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+import structlog
+from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi.responses import JSONResponse
 
-from app.chunking.semantic_chunker import SemanticChunker
-from app.core.audit_db import AuditStore
-from app.core.container import (
-    get_audit_store,
-    get_cache,
-    get_qa_service,
-    get_retriever,
-    get_telemetry,
-)
-from app.core.config import get_settings
-from app.core.errors import QAError
-from app.core.telemetry import TelemetryCollector
-from app.core.cache import InMemoryCache
-from app.ingestion.ingestor import DocumentIngestor
-from app.ingestion.manifest import IngestionManifest
-from app.ingestion.reporting import IngestionReportStore
-from app.models.schemas import QueryRequest, QueryResponse
-from app.parsing.pdf_parser import PdfParser, PdfParserConfig
-from app.qa.service import QAService
-from app.retrieval.hybrid import HybridRetriever
+from app.core.config import settings
+from app.core.pipeline import RAGPipeline
+from app.models.schemas import IngestionResult, QueryRequest, QueryResponse
 
+logger = structlog.get_logger(__name__)
 router = APIRouter()
 
 
-@router.post("/query", response_model=QueryResponse)
-def query_endpoint(
-    payload: QueryRequest,
-    qa_service: QAService = Depends(get_qa_service),
-    audit_store: AuditStore = Depends(get_audit_store),
-) -> QueryResponse:
-    """Answer a query using the QA service."""
+# ── Dependency: get pipeline from app state ───────────────────────────────────
 
-    if not payload.question.strip():
-        raise HTTPException(status_code=422, detail="Question must not be empty.")
-    try:
-        response = qa_service.answer(
-            payload.question,
-            company=payload.company,
-            doc_type=payload.doc_type,
+def get_pipeline(request: Request) -> RAGPipeline:
+    """FastAPI dependency to retrieve the RAG pipeline from app state."""
+    pipeline = getattr(request.app.state, "pipeline", None)
+    if pipeline is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="RAG pipeline not initialized. Check server logs.",
         )
-        audit_store.record_qa_run(
-            created_at=datetime.now(timezone.utc).isoformat(),
-            question=payload.question,
-            company=payload.company,
-            doc_type=payload.doc_type,
-            answer=response.answer,
-            response_time_ms=response.response_time_ms,
-            query_mode=response.query_mode,
-            confidence=response.answer_confidence,
-            source_count=len(response.relevant_chunks),
-            payload=response.model_dump(),
+    return pipeline
+
+
+# ── Query Endpoint ────────────────────────────────────────────────────────────
+
+@router.post(
+    "/query",
+    response_model=QueryResponse,
+    summary="Query financial documents",
+    description=(
+        "Submit a question about company financials. "
+        "The system retrieves relevant document chunks and generates a grounded answer."
+    ),
+    tags=["QA"],
+)
+async def query(
+    request: QueryRequest,
+    pipeline: RAGPipeline = Depends(get_pipeline),
+) -> QueryResponse:
+    """
+    Main QA endpoint.
+
+    - Classifies the query type (numeric, textual, table)
+    - Performs hybrid retrieval (FAISS + BM25)
+    - Attempts programmatic table extraction
+    - Falls back to LLM reasoning
+    - Returns answer with source citations and confidence
+    """
+    try:
+        response = await asyncio.wait_for(
+            pipeline.query(request),
+            timeout=settings.PIPELINE_TIMEOUT_SECONDS,
         )
         return response
-    except QAError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail="Internal QA pipeline error.") from exc
 
-
-@router.get("/metrics")
-def metrics_endpoint(
-    telemetry: TelemetryCollector = Depends(get_telemetry),
-) -> dict:
-    """Return aggregated runtime metrics for QA operations."""
-
-    return telemetry.summary()
-
-
-@router.get("/health")
-def health_endpoint(
-    retriever: HybridRetriever = Depends(get_retriever),
-    telemetry: TelemetryCollector = Depends(get_telemetry),
-) -> dict:
-    """Return lightweight service health and index readiness."""
-
-    return {
-        "status": "ok",
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "retrieval": retriever.stats(),
-        "metrics": telemetry.summary(),
-    }
-
-
-@router.get("/ingestion/report")
-def ingestion_report_endpoint() -> dict:
-    """Return latest per-stage ingestion report with failed file details."""
-
-    settings = get_settings()
-    report_store = IngestionReportStore(Path(settings.ingestion_report_file))
-    return report_store.load()
-
-
-@router.get("/audit/runs")
-def audit_runs_endpoint(
-    audit_store: AuditStore = Depends(get_audit_store),
-) -> dict:
-    """Return latest ingestion and QA audit records."""
-
-    return audit_store.latest_runs(limit=20)
-
-
-@router.post("/ingestion/upload")
-async def upload_ingestion_endpoint(
-    company: str = Form(...),
-    files: list[UploadFile] = File(...),
-    retriever: HybridRetriever = Depends(get_retriever),
-    audit_store: AuditStore = Depends(get_audit_store),
-    cache: InMemoryCache = Depends(get_cache),
-) -> dict:
-    settings = get_settings()
-    normalized_company = company.strip()
-    if not normalized_company:
-        raise HTTPException(status_code=422, detail="Company must not be empty.")
-    if not files:
-        raise HTTPException(status_code=422, detail="At least one file is required.")
-    allowed_extensions = {".pdf", ".xlsx", ".xls", ".json"}
-    batch_id = uuid.uuid4().hex[:10]
-    batch_root = Path(settings.controlled_dataset_path) / "upload_batches" / batch_id
-    company_dir = batch_root / normalized_company
-    company_dir.mkdir(parents=True, exist_ok=True)
-    saved_files: list[str] = []
-    skipped_files: list[str] = []
-    for file in files:
-        extension = Path(file.filename or "").suffix.lower()
-        if extension not in allowed_extensions:
-            skipped_files.append(file.filename or "unknown")
-            continue
-        destination = company_dir / Path(file.filename).name
-        with destination.open("wb") as output:
-            shutil.copyfileobj(file.file, output)
-        saved_files.append(str(destination))
-    if not saved_files:
-        raise HTTPException(status_code=422, detail="No supported files uploaded.")
-    report_store = IngestionReportStore(Path(settings.ingestion_report_file))
-    manifest = IngestionManifest(Path(settings.ingestion_manifest_file))
-    ingestor = DocumentIngestor(
-        chunker=SemanticChunker(),
-        retriever=retriever,
-        pdf_parser=PdfParser(
-            PdfParserConfig(
-                enable_ocr=settings.ocr_enabled,
-                ocr_language_mode=settings.ocr_language_mode,
-                ocr_min_confidence=settings.ocr_min_confidence,
-            )
-        ),
-        manifest=manifest,
-        incremental=False,
-        report_store=report_store,
-    )
-    result = ingestor.ingest(batch_root)
-    retriever.save(Path(settings.index_directory))
-    report_payload = report_store.load()
-    audit_store.record_ingestion_run(
-        created_at=result.pipeline_report.finished_at,
-        payload=report_payload if isinstance(report_payload, dict) else {},
-    )
-    cache.clear()
-    return {
-        "company": normalized_company,
-        "batch_id": batch_id,
-        "saved_files": saved_files,
-        "skipped_files": skipped_files,
-        "processed_files": result.processed_files,
-        "failed_files": len(result.failed_files),
-        "text_chunks": len(result.text_chunks),
-        "table_chunks": len(result.table_chunks),
-        "report": report_payload,
-    }
-
-
-@router.get("/ingestion/uploads")
-def list_uploaded_batches_endpoint() -> dict:
-    settings = get_settings()
-    base_path = Path(settings.controlled_dataset_path) / "upload_batches"
-    if not base_path.exists():
-        return {"batches": []}
-    batches = []
-    for batch_dir in sorted(base_path.iterdir(), reverse=True):
-        if not batch_dir.is_dir():
-            continue
-        files = [str(path) for path in batch_dir.rglob("*") if path.is_file()]
-        batches.append(
-            {
-                "batch_id": batch_dir.name,
-                "file_count": len(files),
-                "files": files[:50],
-            }
+    except asyncio.TimeoutError:
+        logger.error("Query timed out", question=request.question[:60])
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail=f"Query timed out after {settings.PIPELINE_TIMEOUT_SECONDS}s",
         )
-    return {"batches": batches[:20]}
+    except Exception as e:
+        logger.error("Query failed", error=str(e), question=request.question[:60])
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Query processing failed: {type(e).__name__}",
+        )
+
+
+# ── Ingestion Endpoint ────────────────────────────────────────────────────────
+
+@router.post(
+    "/ingest",
+    response_model=IngestionResult,
+    summary="Trigger document ingestion",
+    description="Re-runs the full ingestion pipeline. Use after adding new documents.",
+    tags=["Admin"],
+)
+async def trigger_ingestion(
+    pipeline: RAGPipeline = Depends(get_pipeline),
+) -> IngestionResult:
+    """Re-run full document ingestion."""
+    try:
+        await pipeline._run_ingestion()
+        return IngestionResult(
+            successful=pipeline.index_manager.text_index.size,
+            total_text_chunks=pipeline.index_manager.text_index.size,
+            total_table_chunks=pipeline.index_manager.table_index.size,
+        )
+    except Exception as e:
+        logger.error("Ingestion failed", error=str(e))
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── Status Endpoint ───────────────────────────────────────────────────────────
+
+@router.get(
+    "/status",
+    summary="Pipeline status",
+    tags=["System"],
+)
+async def status_endpoint(
+    pipeline: RAGPipeline = Depends(get_pipeline),
+) -> Dict[str, Any]:
+    """Returns current pipeline status and index sizes."""
+    return {
+        "status": "ready",
+        "indexes": {
+            "text_chunks": pipeline.index_manager.text_index.size,
+            "table_chunks": pipeline.index_manager.table_index.size,
+            "bm25_docs": pipeline.bm25.size,
+        },
+        "cache": {
+            "enabled": settings.CACHE_ENABLED,
+            "size": pipeline.cache.size,
+            "max_size": settings.CACHE_MAX_SIZE,
+        },
+        "config": {
+            "embedding_model": settings.EMBEDDING_MODEL,
+            "llm_model": settings.LLM_MODEL,
+            "llm_provider": settings.LLM_PROVIDER,
+            "retrieval_top_k": settings.RETRIEVAL_TOP_K,
+            "final_top_k": settings.RETRIEVAL_FINAL_K,
+        },
+    }
+
+
+# ── Cache Management ──────────────────────────────────────────────────────────
+
+@router.delete(
+    "/cache",
+    summary="Clear query cache",
+    tags=["Admin"],
+)
+async def clear_cache(
+    pipeline: RAGPipeline = Depends(get_pipeline),
+) -> Dict[str, str]:
+    """Clear the in-memory query cache."""
+    pipeline.cache.clear()
+    return {"message": "Cache cleared"}

@@ -1,172 +1,179 @@
+"""
+Hybrid Retrieval System
+Combines dense (FAISS) + sparse (BM25) retrieval via Reciprocal Rank Fusion.
+Includes query rewriting for improved recall.
+"""
+
 from __future__ import annotations
 
-from collections import defaultdict
-from pathlib import Path
-from typing import Dict, Iterable, List, Literal, Optional, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union
 
-from app.core.config import RetrievalSettings
-from app.models.schemas import DocumentChunk, TableChunk
-from app.retrieval.bm25_store import BM25Store
-from app.retrieval.faiss_store import FaissStore
+import numpy as np
+import structlog
 
-ChunkType = Union[DocumentChunk, TableChunk]
+from app.core.config import settings
+from app.core.logging import TimingLogger
+from app.models.schemas import DocumentChunk, QueryType, TableChunk
+from app.retrieval.bm25 import BM25Retriever
+from app.retrieval.faiss_index import IndexManager
+
+logger = structlog.get_logger(__name__)
+
+RetrievalResult = List[Tuple[Union[DocumentChunk, TableChunk], float]]
 
 
 class HybridRetriever:
-    """Combine dense and keyword retrieval with weighted scoring."""
+    """
+    Hybrid retrieval fusing dense and sparse signals.
+
+    Uses Reciprocal Rank Fusion (RRF) to combine ranked lists,
+    which is more robust than linear score combination when
+    scores from different retrievers have different distributions.
+
+    RRF formula: score = Σ 1/(k + rank_i) for each retriever i
+    where k=60 is a smoothing constant.
+    """
+
+    RRF_K = 60  # standard RRF smoothing constant
 
     def __init__(
         self,
-        text_store: FaissStore,
-        table_store: FaissStore,
-        bm25_store: BM25Store,
-        settings: RetrievalSettings,
-    ) -> None:
-        self._text_store = text_store
-        self._table_store = table_store
-        self._bm25_store = bm25_store
-        self._settings = settings
-
-    def add_text_chunks(self, chunks: Iterable[DocumentChunk]) -> None:
-        """Index text chunks for retrieval."""
-
-        chunk_list = list(chunks)
-        self._text_store.add(chunk_list)
-        self._bm25_store.add(chunk_list)
-
-    def add_table_chunks(self, chunks: Iterable[TableChunk]) -> None:
-        """Index table chunks for retrieval."""
-
-        chunk_list = list(chunks)
-        self._table_store.add(chunk_list)
-        self._bm25_store.add(chunk_list)
-
-    def reset(self) -> None:
-        """Clear all retrieval stores."""
-
-        self._text_store.reset()
-        self._table_store.reset()
-        self._bm25_store.reset()
-
-    def stats(self) -> dict[str, int]:
-        """Return index sizes for diagnostics."""
-
-        return {
-            "text_chunks": self._text_store.size(),
-            "table_chunks": self._table_store.size(),
-            "bm25_chunks": self._bm25_store.size(),
-        }
-
-    def save(self, storage_dir: Path) -> None:
-        """Persist retrieval stores to disk."""
-
-        storage_dir.mkdir(parents=True, exist_ok=True)
-        self._text_store.save(
-            storage_dir / "text.faiss",
-            storage_dir / "text_chunks.json",
-        )
-        self._table_store.save(
-            storage_dir / "table.faiss",
-            storage_dir / "table_chunks.json",
-        )
-        self._bm25_store.save(storage_dir / "bm25.json")
-
-    def load(self, storage_dir: Path) -> bool:
-        """Load retrieval stores from disk if available."""
-
-        text_loaded = self._text_store.load(
-            storage_dir / "text.faiss",
-            storage_dir / "text_chunks.json",
-        )
-        self._table_store.load(
-            storage_dir / "table.faiss",
-            storage_dir / "table_chunks.json",
-        )
-        bm25_loaded = self._bm25_store.load(storage_dir / "bm25.json")
-        return text_loaded and bm25_loaded
+        index_manager: IndexManager,
+        bm25_retriever: BM25Retriever,
+        embedding_engine,  # EmbeddingEngine (avoid circular import)
+    ):
+        self.index_manager = index_manager
+        self.bm25 = bm25_retriever
+        self.embedder = embedding_engine
 
     def retrieve(
         self,
         query: str,
-        prefer_tables: bool = False,
-        mode: Literal["table", "text", "hybrid"] | None = None,
-        company: Optional[str] = None,
-        doc_type: Optional[str] = None,
-    ) -> List[Tuple[ChunkType, float]]:
-        """Retrieve and score top chunks for a query."""
+        query_type: QueryType,
+        top_k: int = settings.RETRIEVAL_FINAL_K,
+        company_filter: Optional[str] = None,
+        doc_type_filter: Optional[str] = None,
+    ) -> RetrievalResult:
+        """
+        Full hybrid retrieval pipeline.
 
-        effective_mode = mode or ("table" if prefer_tables else "text")
-        dense_top_k = self._settings.table_top_k if effective_mode == "table" else self._settings.text_top_k
-        dense_results = self._dense_results_for_mode(query, effective_mode, dense_top_k)
-        bm25_results = self._bm25_store.search(query, dense_top_k * 2)
-        merged = self._merge_scores(dense_results, bm25_results)
-        filtered = self._filter(merged, company=company, doc_type=doc_type)
-        return filtered[: dense_top_k * 2]
+        Steps:
+        1. Optionally rewrite query for better retrieval
+        2. Dense search (FAISS) on text index
+        3. Dense search (FAISS) on table index (if query might be table-based)
+        4. BM25 search
+        5. RRF fusion
+        6. Return top_k
 
-    def _dense_results_for_mode(
-        self,
-        query: str,
-        mode: Literal["table", "text", "hybrid"],
-        top_k: int,
-    ) -> List[Tuple[ChunkType, float]]:
-        """Select dense retrieval strategy for query mode."""
+        Args:
+            query: User question.
+            query_type: Classified query type.
+            top_k: Final number of chunks to return.
+            company_filter: Optional company restriction.
+            doc_type_filter: Optional doc type restriction.
+        """
+        fetch_k = settings.RETRIEVAL_TOP_K
+        rewritten = self._rewrite_query(query, query_type)
 
-        if mode == "table":
-            return self._table_store.search(query, top_k)
-        if mode == "text":
-            return self._text_store.search(query, top_k)
-        text_results = self._text_store.search(query, top_k)
-        table_results = self._table_store.search(query, top_k)
-        return text_results + table_results
+        logger.debug(
+            "Hybrid retrieval",
+            original=query[:80],
+            rewritten=rewritten[:80] if rewritten != query else "[no rewrite]",
+            query_type=query_type.value,
+        )
 
-    def _merge_scores(
-        self,
-        dense_results: List[Tuple[ChunkType, float]],
-        bm25_results: List[Tuple[ChunkType, float]],
-    ) -> List[Tuple[ChunkType, float]]:
-        """Merge dense and BM25 scores into a unified ranking."""
+        all_results: List[RetrievalResult] = []
+        filters = {
+            "company_filter": company_filter,
+            "doc_type_filter": doc_type_filter,
+        }
 
-        scores: Dict[str, float] = defaultdict(float)
-        chunk_map: Dict[str, ChunkType] = {}
-        if dense_results:
-            max_dense = max(score for _, score in dense_results) or 1.0
-            for chunk, score in dense_results:
-                key = self._chunk_key(chunk)
-                chunk_map[key] = chunk
-                scores[key] += (score / max_dense) * self._settings.dense_weight
-        if bm25_results:
-            max_bm25 = max(score for _, score in bm25_results) or 1.0
-            for chunk, score in bm25_results:
-                key = self._chunk_key(chunk)
-                chunk_map[key] = chunk
-                scores[key] += (score / max_bm25) * self._settings.bm25_weight
-        ranked = sorted(scores.items(), key=lambda item: item[1], reverse=True)
-        return [
-            (chunk_map[key], score)
-            for key, score in ranked
-            if score >= self._settings.min_merged_score
-        ]
+        # 1. Dense: text index
+        with TimingLogger("dense_text", logger):
+            query_vec = self.embedder.embed_query(rewritten)
+            text_results = self.index_manager.search_text(query_vec, fetch_k, **filters)
+            if text_results:
+                all_results.append(text_results)
 
-    @staticmethod
-    def _chunk_key(chunk: ChunkType) -> str:
-        """Build deterministic key to deduplicate same source spans."""
+        # 2. Dense: table index (always include for financial queries)
+        with TimingLogger("dense_table", logger):
+            table_results = self.index_manager.search_table(query_vec, fetch_k, **filters)
+            if table_results:
+                all_results.append(table_results)
 
-        location = chunk.page_index if isinstance(chunk, DocumentChunk) else chunk.sheet_index
-        return f"{chunk.metadata.file_name}:{location}:{chunk.metadata.doc_type}:{chunk.metadata.company}"
+        # 3. BM25 sparse retrieval
+        with TimingLogger("bm25", logger):
+            bm25_results = self.bm25.search(rewritten, fetch_k, **filters)
+            if bm25_results:
+                all_results.append(bm25_results)
 
-    @staticmethod
-    def _filter(
-        results: List[Tuple[ChunkType, float]],
-        company: Optional[str],
-        doc_type: Optional[str],
-    ) -> List[Tuple[ChunkType, float]]:
-        """Filter results by metadata."""
+        # 4. RRF fusion
+        fused = self._reciprocal_rank_fusion(all_results)
 
-        filtered: List[Tuple[ChunkType, float]] = []
-        for chunk, score in results:
-            if company and chunk.metadata.company != company:
-                continue
-            if doc_type and chunk.metadata.doc_type != doc_type:
-                continue
-            filtered.append((chunk, score))
-        return filtered
+        # 5. Deduplicate by chunk_id
+        seen_ids = set()
+        deduped: RetrievalResult = []
+        for chunk, score in fused:
+            cid = chunk.chunk_id
+            if cid not in seen_ids:
+                seen_ids.add(cid)
+                deduped.append((chunk, score))
+
+        logger.debug(
+            "Retrieval complete",
+            dense_text=len(text_results),
+            dense_table=len(table_results),
+            bm25=len(bm25_results),
+            fused=len(deduped),
+            returning=min(top_k, len(deduped)),
+        )
+
+        return deduped[:top_k]
+
+    def _reciprocal_rank_fusion(
+        self, ranked_lists: List[RetrievalResult]
+    ) -> RetrievalResult:
+        """
+        Merge multiple ranked lists using Reciprocal Rank Fusion.
+        Returns a merged list sorted by RRF score descending.
+        """
+        chunk_scores: Dict[str, float] = {}
+        chunk_map: Dict[str, Union[DocumentChunk, TableChunk]] = {}
+
+        for ranked_list in ranked_lists:
+            for rank, (chunk, _original_score) in enumerate(ranked_list):
+                cid = chunk.chunk_id
+                rrf_score = 1.0 / (self.RRF_K + rank + 1)
+                chunk_scores[cid] = chunk_scores.get(cid, 0.0) + rrf_score
+                chunk_map[cid] = chunk
+
+        sorted_ids = sorted(chunk_scores.keys(), key=lambda x: chunk_scores[x], reverse=True)
+        return [(chunk_map[cid], chunk_scores[cid]) for cid in sorted_ids]
+
+    def _rewrite_query(self, query: str, query_type: QueryType) -> str:
+        """
+        Lightweight rule-based query rewriting to improve retrieval.
+
+        Adds financial context and expands abbreviations.
+        For a production system, this could call an LLM for HyDE.
+        """
+        rewrites = {
+            # Russian → expand common abbreviations
+            "выручка": "выручка от реализации доходы от продаж revenue",
+            "активы": "суммарные активы total assets баланс",
+            "прибыль": "чистая прибыль net profit доходы",
+            "убыток": "чистый убыток net loss",
+            "капитал": "собственный капитал shareholders equity",
+            # Uzbek
+            "daromad": "daromad tushum выручка revenue",
+            "foyda": "sof foyda net profit чистая прибыль",
+        }
+
+        enhanced = query
+        lower = query.lower()
+        for term, expansion in rewrites.items():
+            if term in lower:
+                enhanced = f"{query} {expansion}"
+                break
+
+        return enhanced

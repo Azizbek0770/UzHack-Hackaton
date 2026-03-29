@@ -1,0 +1,283 @@
+You are a senior full-stack engineer and AI systems architect. 
+ Your task is to design and implement a production-grade full-stack application for a Retrieval-Augmented Generation (RAG) system over financial documents. 
+ This system must include BOTH: 
+ Backend (Python, FastAPI, modular RAG pipeline) 
+ Frontend (React, modern fintech UI) 
+ The goal is NOT speed, but quality, maintainability, and robustness. 
+ 🧠 PROJECT CONTEXT 
+ We are building a system that answers questions about companies using: 
+ PDF documents (text + scanned) 
+ XLSX financial reports (tables) 
+ JSON company metadata 
+ Languages: 
+ Russian 
+ Uzbek 
+ Constraints: 
+ Answers MUST be based only on provided documents 
+ Must return sources (file + page/sheet) 
+ Must handle numeric and textual queries 
+ Must support messy real-world data 
+ 🏗️ SYSTEM REQUIREMENTS 
+ 🔹 BACKEND (Python, FastAPI) 
+ Use: 
+ Python 3.11+ 
+ FastAPI 
+ Clean Architecture principles 
+ Core Features: 
+ Document Ingestion Pipeline 
+ Traverse dataset 
+ Detect file types (PDF, XLSX, JSON) 
+ Extract company from directory 
+ Route to appropriate parser 
+ Parsing System 
+ PDF parser: 
+ Extract text (PyMuPDF/pdfplumber) 
+ Detect low-text pages → OCR fallback (PaddleOCR) 
+ XLSX parser: 
+ Use pandas 
+ Extract all sheets 
+ Convert tables into structured JSON 
+ Data Models 
+ Use dataclasses or Pydantic: 
+ DocumentChunk 
+ TableChunk 
+ Metadata 
+ Each chunk must include: 
+ content 
+ file name 
+ page/sheet index 
+ company 
+ doc_type 
+ Chunking System 
+ Semantic chunking (NOT fixed tokens) 
+ Preserve logical sections 
+ Embedding & Indexing 
+ Multilingual embedding model (e.g. bge-m3) 
+ FAISS index 
+ Separate indexes: 
+ text 
+ tables 
+ Hybrid Retrieval 
+ Dense retrieval (FAISS) 
+ BM25 keyword search 
+ Merge results with scoring 
+ Support filtering: 
+ company 
+ doc_type 
+ Question Understanding 
+ Detect: 
+ numeric vs textual 
+ table-heavy vs text 
+ Route accordingly 
+ Table QA Engine 
+ Extract numeric answers programmatically 
+ Match financial metrics 
+ Avoid LLM when possible 
+ LLM QA Module 
+ Use LLM only for reasoning 
+ Strict prompting: 
+ no hallucination 
+ answer only from context 
+ API Layer (FastAPI) 
+ Endpoint: 
+ POST /query 
+ Input: 
+ { 
+ "question": "string" 
+ } 
+ Output: 
+ { 
+ "answer": "string", 
+ "relevant_chunks": [ 
+ { 
+ "file": "string", 
+ "page": int 
+ } 
+ ] 
+ } 
+ Additional Backend Requirements 
+ Logging 
+ Error handling 
+ Config management 
+ Dependency injection 
+ Service layer separation 
+ Caching (in-memory or Redis optional) 
+ 🎨 FRONTEND (React) 
+ Use: 
+ React (Vite) 
+ TailwindCSS 
+ UI Requirements: 
+ Design Style: 
+ Professional fintech dashboard 
+ Dark mode 
+ Minimalist, clean 
+ Rounded cards, subtle shadows 
+ Main Page: 
+ Large centered search input 
+ Placeholder: 
+ "Ask about company financials..." 
+ Answer Section: 
+ Card displaying: 
+ Answer text 
+ Smooth animation (fade-in) 
+ Sources Panel: 
+ List of sources: 
+ file name 
+ page number 
+ Styled as tags or chips 
+ UX Features: 
+ Loading state (spinner or skeleton) 
+ Error handling UI 
+ Response time indicator 
+ API Integration: 
+ Call backend POST /query 
+ Separate API service layer 
+ Code Structure: 
+ Component-based 
+ Clean separation: 
+ components 
+ pages 
+ services 
+ 📁 PROJECT STRUCTURE 
+ Provide full structure: 
+ rag-platform/ 
+ ├── backend/ 
+ │ ├── app/ 
+ │ │ ├── api/ 
+ │ │ ├── core/ 
+ │ │ ├── ingestion/ 
+ │ │ ├── parsing/ 
+ │ │ ├── chunking/ 
+ │ │ ├── embeddings/ 
+ │ │ ├── retrieval/ 
+ │ │ ├── tables/ 
+ │ │ ├── qa/ 
+ │ │ ├── models/ 
+ │ │ └── main.py 
+ │ ├── scripts/ 
+ │ └── requirements.txt 
+ │ 
+ ├── frontend/ 
+ │ ├── src/ 
+ │ │ ├── components/ 
+ │ │ ├── pages/ 
+ │ │ ├── services/ 
+ │ │ └── App.jsx 
+ │ └── package.json 
+ │ 
+ └── README.md 
+ 🧾 CODING REQUIREMENTS 
+ Use type hints everywhere 
+ Use docstrings for all functions/classes 
+ Modular design (NO monolithic files) 
+ Clean, readable, production-quality code 
+ Include example usage 
+ Include comments explaining design decisions 
+ 🧪 TESTING 
+ Add basic unit tests (pytest) for: 
+ parsers 
+ retrieval 
+ QA modules 
+ 🚀 OUTPUT FORMAT 
+ IMPORTANT: 
+ Output FULL codebase 
+ Clearly separate files with paths 
+ Do NOT skip modules 
+ Do NOT simplify architecture 
+ Do NOT collapse everything into one file 
+ 🎯 FINAL GOAL 
+ The result should look like a real-world fintech AI product: 
+ scalable 
+ maintainable 
+ explainable (with sources) 
+ visually polished 
+ Take your time and produce high-quality code.
+
+ challenge:
+ "NBU RAG Challenge | UzHack 2026
+Обзор соревнования
+Добро пожаловать в NBU RAG Challenge в рамках международного технологического хакатона UzHack 2026!
+Ваша задача - построить эффективный RAG (Retrieval-Augmented Generation) пайплайн для ответов на вопросы об узбекистанских компаниях на основе их публичных финансовых документов и раскрытий информации.
+Данный кейс подготовлен при поддержке NBU Bank (Узбекистан) в рамках содействия развитию финтех-экосистемы и поддержки узбекистанской молодежи за рубежом.
+О хакатоне
+UzHack - международный технологический хакатон, организованный Фондом общественной поддержки граждан совместно со Всемирной ассоциацией молодежи Узбекистана, 27-29 марта 2026 года в Латвийской Республике. Хакатон объединяет узбекистанскую молодежь, обучающуюся и работающую в странах Балтийского региона, а также международных участников для разработки перспективных решений в области цифровой экономики, финтеха и инноваций.
+Структура датасета
+Основные компоненты:
+1.	Dataset/ - папка содержит файлы с документами о компаниях
+•	Все данные являются публичными и взяты с Ташкентской Республиканской Фондовой Биржи (uzse.uz)
+•	Датасет включает 35 компаний различных отраслей: банки, промышленность, сельское хозяйство, энергетика, торговля
+•	Для каждой компании доступны:
+•	reports/ - финансовая отчетность по стандартам НСБУ (годовая и квартальная) и МСФО (годовая) в форматах PDF и XLSX
+•	facts/ - существенные факты и раскрытия информации (решения органов управления, изменения в руководстве и т.д.) в формате PDF
+•	profile.json - базовая информация о компании (ИНН, адрес, реквизиты)
+•	Важно: Документы остаются неизменными на протяжении всего соревнования
+2.	questions_public.xlsx - список вопросов и форматы ответов для тренировки
+3.	submission_format.json - шаблон для файла с ответами в требуемом формате
+4.	answers_public.json - примеры ответов на публичные вопросы в правильном формате
+Особенности датасета:
+•	~750 PDF и ~530 XLSX файлов
+•	Документы на узбекском и русском языках
+•	Финансовая отчетность по стандартам НСБУ (Национальные Стандарты Бухгалтерского Учета) и МСФО (Международные Стандарты Финансовой Отчетности)
+•	Часть файлов представляет собой сканы, часть содержит сложные таблицы
+•	Существенные факты (facts) - это PDF-документы о корпоративных событиях компаний
+График соревнования
+Дата и времяСобытие27 марта, утроПубликация датасета и публичных вопросов, начало работы29 марта, 10:00Публикация приватного сета вопросов29 марта, 10:30Дедлайн подачи ответов на приватные вопросы29 марта, TBAОбъявление результатов и награждение
+Примечание: Приватный датасет содержит только новый сет вопросов. Документы остаются те же, что и в публичном датасете. Используйте первый день для тщательной подготовки пайплайна!
+Технические требования и правила
+Разрешенные инструменты для ваших пайплайнов:
+•	Любые LLM модели
+•	Любые эмбеддинг модели
+•	OCR инструменты
+•	Любые другие технические решения
+Ключевые ограничения:
+•	Запрещено использовать внешние источники (Google, другие сайты) для прямого ответа на вопрос (разрешено использовать внешние модели и API в своих пайплайнах)
+•	Обязательно основывать ответы только на документах из датасета
+•	Обязательно указывать источники (название документа и номер страницы/листа)
+Правила подачи ответов
+•	Количество попыток: Максимум 3 подачи
+•	Оценка: Учитывается лучший результат из всех попыток
+•	Формат: JSON файл с ответами + исходный код решения (репозиторий или архив)
+•	Проверка: В случае подозрительных результатов может потребоваться объяснение архитектуры решения
+•	Вариации ответов: Если ответ фактически правильный и отличается лишь небольшими нюансами формулировки, он будет засчитан
+Особенности работы с документами
+Форматы файлов:
+•	PDF документы: Номер страницы = технический номер страницы (не те номера, что указаны на самой странице, а порядковый номер, считываемый PDF-библиотекой)
+•	XLSX файлы: Номер страницы = порядковый номер листа (sheet), начиная с 1
+Типы файлов в датасете:
+ПрефиксОписаниеNSBU_annual_*Годовая отчетность по НСБУNSBU_quarter_*Квартальная отчетность по НСБУMSFO_annual_*Годовая отчетность по МСФОfact*_*.pdfСущественные факты (корпоративные раскрытия)profile.jsonМетаданные компании
+Указание источников (relevant_chunks):
+Цели указания чанков:
+5.	Выявление случаев использования внешних источников
+6.	Обеспечение прозрачности и возможности проверки ответов
+Правила указания:
+•	Связанная информация: Если ответ основан на данных из таблицы/раздела, который начинается на одной странице и заканчивается на другой, можно указать начальную страницу
+•	Независимые чанки: Если ответ требует информации из разных частей документов, указывайте все задействованные чанки
+•	Дублированная информация: При наличии одинаковой информации в разных файлах (например, в PDF и XLSX версии отчета) достаточно сослаться на один из источников
+Пример работы с дубликатами:
+Если одна и та же таблица присутствует в:
+•	NSBU_annual_2134.pdf (страница 2)
+•	NSBU_annual_2134.xlsx (лист 1)
+Можно указать только один из источников - ответ будет засчитан.
+Система оценки
+Метрика:
+•	Точность ответов - основной критерий (70% итоговой оценки)
+•	Полнота источников - корректность указания relevant_chunks (20%)
+•	Скорость - время обработки приватных вопросов (10% бонус)
+Типы вопросов:
+ТипОписаниеOCRОтвет требует распознавания текста из отсканированных документовARОтвет находится в структурированных отчетах (Annual/Quarterly Reports)BothОтвет требует комбинации OCR и работы с отчетами
+Типы ответов:
+ТипОписаниеПримерstrТекстовый ответТашкент шахар, Шайхонтохур туманиintЦелое число42floatДробное число12.55
+Рекомендации для участников
+7.	Предобработка: Уделите достаточно времени качественной обработке документов в первый день. NSBU отчеты в XLSX формате проще парсить, чем PDF версии
+8.	Мультиязычность: Документы на узбекском и русском - учтите это при выборе LLM и эмбеддинг моделей
+9.	Таблицы: Финансовая отчетность содержит сложные таблицы - используйте специализированные инструменты для их обработки
+10.	Цитирование: Убедитесь, что ваша система корректно отслеживает источники информации
+11.	Архитектура: Продумайте масштабируемое решение, способное быстро обрабатывать новые вопросы
+После соревнования
+После окончания хакатона приветствуется от участников:
+•	Публикация описаний архитектуры решений
+•	Обмен опытом в социальных сетях
+•	Участие в обсуждениях с другими участниками
+Это отличная возможность для профессионального развития и нетворкинга! Ваш опыт может привлечь внимание потенциальных работодателей или единомышленников для будущих совместных проектов.
+
+Кейс подготовлен при поддержке NBU Bank | UzHack 2026, Латвия

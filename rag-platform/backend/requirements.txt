@@ -1,16 +1,40 @@
-fastapi==0.112.2
-uvicorn==0.30.6
-pydantic==2.8.2
-pydantic-settings==2.4.0
-pdfplumber==0.11.4
-PyMuPDF==1.24.9
-paddleocr==2.7.3
-pandas==2.2.2
-openpyxl==3.1.5
-sentence-transformers==3.0.1
-faiss-cpu==1.8.0.post1
-rank-bm25==0.2.2
-requests==2.32.3
+# ── Core Framework ────────────────────────────────────────────────────────────
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+pydantic==2.9.2
+pydantic-settings==2.5.2
+
+# ── Structured Logging ────────────────────────────────────────────────────────
+structlog==24.4.0
+
+# ── Document Parsing ──────────────────────────────────────────────────────────
+pymupdf==1.24.10           # PDF parsing (fitz)
+pdfplumber==0.11.4         # PDF table extraction (optional)
+pandas==2.2.3              # XLSX parsing
+openpyxl==3.1.5            # Excel engine for pandas
+Pillow==10.4.0             # Image handling for OCR
 numpy==1.26.4
-pytest==8.3.2
-python-multipart==0.0.9
+
+# ── OCR (optional — comment out if not needed) ────────────────────────────────
+# paddlepaddle==2.6.1
+# paddleocr==2.8.1
+
+# ── Embeddings ────────────────────────────────────────────────────────────────
+sentence-transformers==3.1.1
+torch==2.4.1               # Required by sentence-transformers
+transformers==4.44.2
+
+# ── Vector Search ─────────────────────────────────────────────────────────────
+faiss-cpu==1.8.0           # Use faiss-gpu for GPU environments
+
+# ── Keyword Search ────────────────────────────────────────────────────────────
+rank-bm25==0.2.2
+
+# ── LLM Clients ───────────────────────────────────────────────────────────────
+openai==1.51.0             # OpenAI + Ollama compatible
+anthropic==0.34.2          # Anthropic Claude
+
+# ── Testing ───────────────────────────────────────────────────────────────────
+pytest==8.3.3
+pytest-asyncio==0.24.0
+httpx==0.27.2              # For testing FastAPI endpoints
