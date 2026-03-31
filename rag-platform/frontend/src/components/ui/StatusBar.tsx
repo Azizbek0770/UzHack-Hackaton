@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { motion } from 'framer-motion'
+import { useEffect, useMemo, useState } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
 import { Circle, Database, Brain, Cpu } from 'lucide-react'
 import clsx from 'clsx'
 import { api } from '../../services/api'
@@ -10,78 +10,102 @@ export function StatusBar() {
   const [online, setOnline] = useState<boolean | null>(null)
 
   useEffect(() => {
+    let mounted = true
+
     const check = async () => {
       try {
         const s = await api.getStatus()
+        if (!mounted) return
         setStatus(s)
         setOnline(s.status === 'ready')
       } catch {
+        if (!mounted) return
         setOnline(false)
       }
     }
+
     check()
-    const interval = setInterval(check, 30_000) // refresh every 30s
-    return () => clearInterval(interval)
+    const interval = setInterval(check, 30_000)
+
+    return () => {
+      mounted = false
+      clearInterval(interval)
+    }
   }, [])
 
+  const isLoading = online === null
+
+  const embeddingName = useMemo(() => {
+    return status?.config.embedding_model?.split('/').pop()
+  }, [status])
+
   return (
-    <div className="flex items-center gap-4">
-      {/* Online indicator */}
-      <div className="flex items-center gap-1.5">
+    <div className="flex items-center gap-3 px-3 py-1.5 rounded-xl bg-obsidian-900/60 backdrop-blur-md border border-white/5 shadow-sm">
+
+      {/* STATUS */}
+      <div className="flex items-center gap-2">
         <motion.div
-          animate={online === true ? { scale: [1, 1.3, 1] } : {}}
-          transition={{ repeat: Infinity, duration: 2, ease: 'easeInOut' }}
+          animate={
+            online
+              ? { scale: [1, 1.4, 1], opacity: [0.8, 1, 0.8] }
+              : { scale: 1 }
+          }
+          transition={{ repeat: Infinity, duration: 2 }}
+          className="relative"
         >
           <Circle
-            size={7}
+            size={8}
             className={clsx(
               'fill-current',
-              online === null
-                ? 'text-obsidian-600'
+              isLoading
+                ? 'text-obsidian-500'
                 : online
-                ? 'text-jade-500'
-                : 'text-crimson-500'
+                ? 'text-jade-400'
+                : 'text-red-500'
             )}
           />
+
+          {/* glow */}
+          {online && (
+            <span className="absolute inset-0 rounded-full bg-jade-400 blur-sm opacity-40" />
+          )}
         </motion.div>
-        <span className="text-xs text-obsidian-500 font-medium">
-          {online === null ? 'Ulanmoqda...' : online ? 'Onlayn' : 'Oflayn'}
+
+        <span className="text-sm font-semibold">
+          {isLoading ? 'Ulanmoqda...' : online ? 'Onlayn' : 'Oflayn'}
         </span>
       </div>
 
-      {status && (
-        <>
-          <div className="h-3 w-px bg-obsidian-700" />
+      {/* DATA */}
+      <AnimatePresence>
+        {status && (
+          <motion.div
+            initial={{ opacity: 0, y: 4 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="flex items-center gap-4 text-[11px] text-obsidian-400"
+          >
+            {/* TEXT CHUNKS */}
+            <div className="flex items-center gap-1.5 hover:text-white transition">
+              <Database size={12} />
+              <span className="font-mono">
+                {status.indexes.text_chunks.toLocaleString()}
+              </span>
+            </div>
 
-          {/* Text chunks */}
-          <div className="flex items-center gap-1.5" title="Tizimdagi jami matn bloklari">
-            <Database size={11} className="text-obsidian-600" />
-            <span className="text-xs font-mono text-obsidian-500">
-              {status.indexes.text_chunks.toLocaleString()} bloklar
-            </span>
-          </div>
+            {/* MODEL */}
+            <div className="flex items-center gap-1.5 hover:text-white transition">
+              <Brain size={12} />
+              <span>{status.config.llm_model}</span>
+            </div>
 
-          <div className="h-3 w-px bg-obsidian-700" />
-
-          {/* Model info */}
-          <div className="flex items-center gap-1.5" title="LLM Modeli">
-            <Brain size={11} className="text-obsidian-600" />
-            <span className="text-xs text-obsidian-500">
-              {status.config.llm_model}
-            </span>
-          </div>
-
-          <div className="h-3 w-px bg-obsidian-700" />
-
-          {/* Embedding model */}
-          <div className="flex items-center gap-1.5" title="Embedding Modeli">
-            <Cpu size={11} className="text-obsidian-600" />
-            <span className="text-xs text-obsidian-500 truncate max-w-[120px]">
-              {status.config.embedding_model.split('/').pop()}
-            </span>
-          </div>
-        </>
-      )}
+            {/* EMBEDDING */}
+            <div className="flex items-center gap-1.5 hover:text-white transition max-w-[120px] truncate">
+              <Cpu size={12} />
+              <span>{embeddingName}</span>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   )
 }
